@@ -6,32 +6,16 @@ use candle_transformers::models::bigcode::{Config, GPTBigCode};
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use tokenizers::Tokenizer;
 
-pub struct TextGeneration {
+pub struct Model {
     model: GPTBigCode,
     device: Device,
     tokenizer: Tokenizer,
     logits_processor: LogitsProcessor,
+    max_length: usize,
 }
 
-impl TextGeneration {
-    fn new(
-        model: GPTBigCode,
-        tokenizer: Tokenizer,
-        seed: u64,
-        temp: Option<f64>,
-        top_p: Option<f64>,
-        device: &Device,
-    ) -> Self {
-        let logits_processor = LogitsProcessor::new(seed, temp, top_p);
-        Self {
-            model,
-            tokenizer,
-            logits_processor,
-            device: device.clone(),
-        }
-    }
-
-    pub fn run(&mut self, prompt: &str, sample_len: usize) -> Result<String> {
+impl super::Model for Model {
+    fn run(&mut self, prompt: &str) -> Result<String> {
         eprintln!("Starting to generate tokens");
         let mut tokens = self
             .tokenizer
@@ -42,7 +26,7 @@ impl TextGeneration {
         let mut new_tokens = vec![];
         let mut outputs = vec![];
         let start_gen = std::time::Instant::now();
-        for index in 0..sample_len {
+        for index in 0..self.max_length {
             let (context_size, past_len) = if self.model.config().use_cache && index > 0 {
                 (1, tokens.len().saturating_sub(1))
             } else {
@@ -62,15 +46,40 @@ impl TextGeneration {
         let dt = start_gen.elapsed();
         self.model.clear_cache();
         eprintln!(
-            "GENERATED {} tokens in  {} seconds",
+            "GENERATED {} tokens in  {} milliseconds",
             outputs.len(),
-            dt.as_secs()
+            dt.as_millis()
         );
         Ok(outputs.join(""))
     }
 }
 
-pub fn build() -> Result<TextGeneration> {
+impl Model {
+    fn new(
+        model: GPTBigCode,
+        tokenizer: Tokenizer,
+        seed: u64,
+        temp: Option<f64>,
+        top_p: Option<f64>,
+        device: &Device,
+        max_length: usize,
+    ) -> Self {
+        let logits_processor = LogitsProcessor::new(seed, temp, top_p);
+        Self {
+            model,
+            tokenizer,
+            logits_processor,
+            device: device.clone(),
+            max_length,
+        }
+    }
+}
+
+pub fn build_model(
+    model: Option<String>,
+    model_file: Option<String>,
+    max_length: usize,
+) -> Result<Model> {
     let start = std::time::Instant::now();
     eprintln!("Loading in model");
     let api = ApiBuilder::new()
@@ -87,17 +96,24 @@ pub fn build() -> Result<TextGeneration> {
         .map(|f| repo.get(f))
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
+
+    // Set the device
+    #[cfg(feature = "cuda")]
+    let device = Device::new_cuda(0)?;
+    #[cfg(not(feature = "cuda"))]
     let device = Device::Cpu;
+
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, DType::F32, &device)? };
     let config = Config::starcoder_1b();
     let model = GPTBigCode::load(vb, config)?;
     eprintln!("loaded the model in {:?}", start.elapsed());
-    Ok(TextGeneration::new(
+    Ok(Model::new(
         model,
         tokenizer,
         0,
         Some(0.85),
         None,
         &device,
+        max_length,
     ))
 }
