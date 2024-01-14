@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "configurations": [
+    {
+      "name": "Run Installed Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--disable-extensions",
+        "--extensionDevelopmentPath=${workspaceFolder}/editors/vscode"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/editors/vscode/out/**/*.js"
+      ],
+      "preLaunchTask": "Build Extension",
+      "skipFiles": [
+        "<node_internals>/**/*.js"
+      ]
+    }
+  ]
+}

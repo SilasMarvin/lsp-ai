@@ -1,2 +1,4 @@
 /target
 /models
+node_modules
+out

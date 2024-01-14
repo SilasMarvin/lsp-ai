@@ -1,0 +1,17 @@
+{
+  "version": "0.1.0",
+  "tasks": [
+    {
+      "label": "Build Extension",
+      "group": "build",
+      "type": "npm",
+      "script": "build",
+      "path": "editors/vscode/",
+      "problemMatcher": {
+        "base": "$tsc-watch",
+        "fileLocation": ["relative", "${workspaceFolder}/editors/vscode/"]
+      },
+      "isBackground": true
+    }
+  ]
+}

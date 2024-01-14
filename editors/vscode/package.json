@@ -1,0 +1,23 @@
+{
+  "name": "lsp-ai",
+  "version": "0.1.0",
+  "description": "",
+  "main": "/out/index.js",
+  "scripts": {
+    "build": "npx tsc"
+  },
+  "author": "",
+  "license": "MIT",
+  "activationEvents": ["onLanguage"],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@types/vscode": "^1.85.0",
+    "vscode-languageclient": "^9.0.1"
+  }
+}

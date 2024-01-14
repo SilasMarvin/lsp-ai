@@ -14,8 +14,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::thread;
 
-mod models;
-use models::{Model, ModelParams};
+use once_cell::sync::Lazy;
+use pyo3::prelude::*;
+
+pub static PY_MODULE: Lazy<Result<Py<PyAny>>> = Lazy::new(|| {
+    pyo3::Python::with_gil(|py| -> Result<Py<PyAny>> {
+        let src = include_str!("python/transformers.py");
+        Ok(pyo3::types::PyModule::from_code(py, src, "transformers.py", "transformers")?.into())
+    })
+});
 
 // Taken directly from: https://github.com/rust-lang/rust-analyzer
 fn notification_is<N: lsp_types::notification::Notification>(notification: &Notification) -> bool {
@@ -40,16 +47,25 @@ fn main() -> Result<()> {
         ..Default::default()
     })?;
     let initialization_params = connection.initialize(server_capabilities)?;
+
+    // Activate the python venv
+    Python::with_gil(|py| -> Result<()> {
+        let activate: Py<PyAny> = PY_MODULE
+            .as_ref()
+            .map_err(anyhow::Error::msg)?
+            .getattr(py, "activate_venv")?;
+
+        activate.call1(py, ("/Users/silas/Projects/lsp-ai/venv",))?;
+        Ok(())
+    })?;
+
     main_loop(connection, initialization_params)?;
     io_threads.join()?;
     Ok(())
 }
 
 #[derive(Deserialize)]
-struct Params {
-    // We may want to put other non-model related parameters here in the future
-    model_params: Option<ModelParams>,
-}
+struct Params {}
 
 struct CompletionRequest {
     id: RequestId,
@@ -69,6 +85,16 @@ impl CompletionRequest {
 fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
     let params: Params = serde_json::from_value(params)?;
 
+    // Set the model
+    Python::with_gil(|py| -> Result<()> {
+        let activate: Py<PyAny> = PY_MODULE
+            .as_ref()
+            .map_err(anyhow::Error::msg)?
+            .getattr(py, "set_model")?;
+        activate.call1(py, ("",))?;
+        Ok(())
+    })?;
+
     // Prep variables
     let connection = Arc::new(connection);
     let mut file_map: HashMap<String, Rope> = HashMap::new();
@@ -79,12 +105,7 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
     // Thread local variables
     let thread_last_completion_request = last_completion_request.clone();
     let thread_connection = connection.clone();
-    // We need to allow unreachabel to be able to use the question mark operators here
-    // We could probably restructure this to not require it
-    #[allow(unreachable_code)]
     thread::spawn(move || {
-        // Build the model from the params
-        let mut model: Box<dyn Model> = params.model_params.unwrap_or_default().try_into()?;
         loop {
             // I think we need this drop, not 100% sure though
             let mut completion_request = thread_last_completion_request.lock();
@@ -98,16 +119,39 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
             {
                 let filter_text = rope
                     .get_line(params.text_document_position.position.line as usize)
-                    .context("Error getting line with ropey")?
+                    .expect("Error getting line with ropey")
                     .to_string();
 
                 // Convert rope to correct prompt for llm
-                let start_index = rope
+                let cursor_index = rope
                     .line_to_char(params.text_document_position.position.line as usize)
                     + params.text_document_position.position.character as usize;
-                rope.insert(start_index, "<fim_suffix>");
-                let prompt = format!("<fim_prefix>{}<fim_middle>", rope);
-                let insert_text = model.run(&prompt)?;
+
+                // We will want to have some kind of infill support we add
+                // rope.insert(cursor_index, "<｜fim_hole｜>");
+                // rope.insert(0, "<｜fim_start｜>");
+                // rope.insert(rope.len_chars(), "<｜fim_end｜>");
+                // let prompt = rope.to_string();
+
+                let prompt = rope
+                    .get_slice((0..cursor_index))
+                    .expect("Error getting rope slice")
+                    .to_string();
+
+                eprintln!("\n\n****{prompt}****\n\n");
+
+                let insert_text = Python::with_gil(|py| -> Result<String> {
+                    let transform: Py<PyAny> = PY_MODULE
+                        .as_ref()
+                        .map_err(anyhow::Error::msg)?
+                        .getattr(py, "transform")?;
+
+                    let out: String = transform.call1(py, (prompt,))?.extract(py)?;
+                    Ok(out)
+                })
+                .expect("Error during transform");
+
+                eprintln!("\n{insert_text}\n");
 
                 // Create and return the completion
                 let completion_text_edit = TextEdit::new(
@@ -141,11 +185,13 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
                     result: Some(result),
                     error: None,
                 };
-                thread_connection.sender.send(Message::Response(resp))?;
+                thread_connection
+                    .sender
+                    .send(Message::Response(resp))
+                    .expect("Error sending response");
             }
             thread::sleep(std::time::Duration::from_millis(5));
         }
-        anyhow::Ok(())
     });
 
     for msg in &connection.receiver {
@@ -171,7 +217,6 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
                 };
             }
             Message::Notification(not) => {
-                eprintln!("got notification: {not:?}");
                 if notification_is::<lsp_types::notification::DidOpenTextDocument>(&not) {
                     let params: DidOpenTextDocumentParams = serde_json::from_value(not.params)?;
                     let rope = Rope::from_str(&params.text_document.text);
