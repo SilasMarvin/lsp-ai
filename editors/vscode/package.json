@@ -12,6 +12,14 @@
   "engines": {
     "vscode": "^1.75.0"
   },
+  "contributes": {
+    "commands": [
+      {
+        "command": "lsp-ai.generate",
+        "title": "LSP AI Generate"
+      }
+    ]
+  },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3"
