@@ -3,16 +3,19 @@ use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionList, CompletionParams, CompletionResponse,
     Position, Range, TextEdit,
 };
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use ropey::Rope;
 use std::{sync::Arc, thread};
 
 mod completion;
 mod generate;
+mod generate_stream;
 
 use crate::custom_requests::generate::{GenerateParams, GenerateResult};
+use crate::custom_requests::generate_stream::{GenerateStreamParams, GenerateStreamResult};
 use completion::do_completion;
 use generate::do_generate;
+use generate_stream::do_generate_stream;
 
 #[derive(Clone)]
 pub struct CompletionRequest {
@@ -41,16 +44,30 @@ impl GenerateRequest {
 }
 
 #[derive(Clone)]
+pub struct GenerateStreamRequest {
+    id: RequestId,
+    params: GenerateStreamParams,
+    rope: Rope,
+}
+
+impl GenerateStreamRequest {
+    pub fn new(id: RequestId, params: GenerateStreamParams, rope: Rope) -> Self {
+        Self { id, params, rope }
+    }
+}
+
+#[derive(Clone)]
 pub enum WorkerRequest {
     Completion(CompletionRequest),
     Generate(GenerateRequest),
+    GenerateStream(GenerateStreamRequest),
 }
 
-pub fn run(last_worker_request: Arc<RwLock<Option<WorkerRequest>>>, connection: Arc<Connection>) {
+pub fn run(last_worker_request: Arc<Mutex<Option<WorkerRequest>>>, connection: Arc<Connection>) {
     loop {
         let option_worker_request: Option<WorkerRequest> = {
-            let completion_request = last_worker_request.read();
-            (*completion_request).clone()
+            let mut completion_request = last_worker_request.lock();
+            std::mem::take(&mut *completion_request)
         };
         if let Some(request) = option_worker_request {
             let response = match request {
@@ -114,11 +131,50 @@ pub fn run(last_worker_request: Arc<RwLock<Option<WorkerRequest>>>, connection: 
                         error: Some(e),
                     },
                 },
+                WorkerRequest::GenerateStream(request) => match do_generate_stream(&request) {
+                    Ok(result) => {
+                        // let result = GenerateResult {
+                        //     generated_text: result.generated_text,
+                        // };
+                        // let result = serde_json::to_value(&result).unwrap();
+                        let result = GenerateStreamResult {
+                            generated_text: "test".to_string(),
+                            partial_result_token: request.params.partial_result_token,
+                        };
+                        let result = serde_json::to_value(&result).unwrap();
+                        Response {
+                            id: request.id,
+                            result: Some(result),
+                            error: None,
+                        }
+                    }
+                    Err(e) => Response {
+                        id: request.id,
+                        result: None,
+                        error: Some(e),
+                    },
+                },
             };
             connection
                 .sender
-                .send(Message::Response(response))
+                .send(Message::Response(response.clone()))
                 .expect("Error sending response");
+            connection
+                .sender
+                .send(Message::Response(response.clone()))
+                .expect("Error sending response");
+            connection
+                .sender
+                .send(Message::Response(response.clone()))
+                .expect("Error sending response");
+            // connection
+            //     .sender
+            //     .send(Message::Response(Response {
+            //         id: response.id,
+            //         result: None,
+            //         error: None,
+            //     }))
+            //     .expect("Error sending  message");
         }
         thread::sleep(std::time::Duration::from_millis(5));
     }

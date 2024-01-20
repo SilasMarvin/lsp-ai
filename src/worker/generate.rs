@@ -1,7 +1,7 @@
 use lsp_server::ResponseError;
 use pyo3::prelude::*;
 
-use super::GenerateRequest;
+use super::{GenerateRequest, GenerateStreamRequest};
 use crate::PY_MODULE;
 
 pub struct DoGenerateResponse {

@@ -12,6 +12,7 @@ pub struct GenerateParams {
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateResult {
     pub generated_text: String,
 }

@@ -8,7 +8,9 @@
   },
   "author": "",
   "license": "MIT",
-  "activationEvents": ["onLanguage"],
+  "activationEvents": [
+    "onLanguage"
+  ],
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -17,6 +19,10 @@
       {
         "command": "lsp-ai.generate",
         "title": "LSP AI Generate"
+      },
+      {
+        "command": "lsp-ai.generateStream",
+        "title": "LSP AI Generate Stream"
       }
     ]
   },
@@ -26,6 +32,7 @@
   },
   "dependencies": {
     "@types/vscode": "^1.85.0",
+    "uuid": "^9.0.1",
     "vscode-languageclient": "^9.0.1"
   }
 }

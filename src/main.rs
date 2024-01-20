@@ -5,7 +5,7 @@ use lsp_types::{
     RenameFilesParams, ServerCapabilities, TextDocumentSyncKind,
 };
 use once_cell::sync::Lazy;
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use pyo3::prelude::*;
 use ropey::Rope;
 use serde::Deserialize;
@@ -17,6 +17,8 @@ mod worker;
 use custom_requests::generate::Generate;
 use worker::{CompletionRequest, GenerateRequest, WorkerRequest};
 
+use crate::{custom_requests::generate_stream::GenerateStream, worker::GenerateStreamRequest};
+
 pub static PY_MODULE: Lazy<Result<Py<PyAny>>> = Lazy::new(|| {
     pyo3::Python::with_gil(|py| -> Result<Py<PyAny>> {
         let src = include_str!("python/transformers.py");
@@ -27,6 +29,10 @@ pub static PY_MODULE: Lazy<Result<Py<PyAny>>> = Lazy::new(|| {
 // Taken directly from: https://github.com/rust-lang/rust-analyzer
 fn notification_is<N: lsp_types::notification::Notification>(notification: &Notification) -> bool {
     notification.method == N::METHOD
+}
+
+fn request_is<R: lsp_types::request::Request>(request: &Request) -> bool {
+    request.method == R::METHOD
 }
 
 fn cast<R>(req: Request) -> Result<(RequestId, R::Params), ExtractError<Request>>
@@ -88,7 +94,7 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
     let mut file_map: HashMap<String, Rope> = HashMap::new();
 
     // How we communicate between the worker and receiver threads
-    let last_worker_request = Arc::new(RwLock::new(None));
+    let last_worker_request = Arc::new(Mutex::new(None));
 
     // Thread local variables
     let thread_last_worker_request = last_worker_request.clone();
@@ -103,43 +109,50 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
                 if connection.handle_shutdown(&req)? {
                     return Ok(());
                 }
-                eprintln!(
-                    "NEW REQUEST: \n{}\n",
-                    serde_json::to_string_pretty(&req).unwrap()
-                );
-
-                match req.method.as_str() {
-                    "textDocument/completion" => match cast::<Completion>(req) {
+                // Right now each if / else basically does the same thing,
+                // but this may change soon so it is worth making it a little
+                // more verbose than it needs to be now
+                if request_is::<Completion>(&req) {
+                    match cast::<Completion>(req) {
                         Ok((id, params)) => {
-                            // Get rope
                             let rope = file_map
                                 .get(params.text_document_position.text_document.uri.as_str())
                                 .context("Error file not found")?
                                 .clone();
-                            // Update the last CompletionRequest
-                            let mut lcr = last_worker_request.write();
+                            let mut lcr = last_worker_request.lock();
                             let completion_request = CompletionRequest::new(id, params, rope);
                             *lcr = Some(WorkerRequest::Completion(completion_request));
                         }
-                        Err(err @ ExtractError::JsonError { .. }) => panic!("{err:?}"),
-                        Err(ExtractError::MethodMismatch(_req)) => (),
-                    },
-                    "textDocument/generate" => match cast::<Generate>(req) {
+                        Err(err) => panic!("{err:?}"),
+                    }
+                } else if request_is::<Generate>(&req) {
+                    match cast::<Generate>(req) {
                         Ok((id, params)) => {
-                            // Get rope
                             let rope = file_map
                                 .get(params.text_document_position.text_document.uri.as_str())
                                 .context("Error file not found")?
                                 .clone();
-                            // Update the last CompletionRequest
-                            let mut lcr = last_worker_request.write();
+                            let mut lcr = last_worker_request.lock();
                             let completion_request = GenerateRequest::new(id, params, rope);
                             *lcr = Some(WorkerRequest::Generate(completion_request));
                         }
-                        Err(err @ ExtractError::JsonError { .. }) => panic!("{err:?}"),
-                        Err(ExtractError::MethodMismatch(_req)) => (),
+                        Err(err) => panic!("{err:?}"),
                     }
-                    _ => eprintln!("lsp-ai currently only supports textDocument/completion and textDocument/generate")
+                } else if request_is::<GenerateStream>(&req) {
+                    match cast::<GenerateStream>(req) {
+                        Ok((id, params)) => {
+                            let rope = file_map
+                                .get(params.text_document_position.text_document.uri.as_str())
+                                .context("Error file not found")?
+                                .clone();
+                            let mut lcr = last_worker_request.lock();
+                            let completion_request = GenerateStreamRequest::new(id, params, rope);
+                            *lcr = Some(WorkerRequest::GenerateStream(completion_request));
+                        }
+                        Err(err) => panic!("{err:?}"),
+                    }
+                } else {
+                    eprintln!("lsp-ai currently only supports textDocument/completion, textDocument/generate and textDocument/generateStream")
                 }
             }
             Message::Notification(not) => {

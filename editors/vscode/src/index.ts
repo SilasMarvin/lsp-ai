@@ -5,6 +5,7 @@ import {
   ServerOptions,
   TransportKind
 } from 'vscode-languageclient/node';
+import { v4 as uuidv4 } from 'uuid';
 
 let client: LanguageClient;
 
@@ -17,7 +18,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Options to control the language client
   let clientOptions: LanguageClientOptions = {
-    documentSelector: [{ pattern: "**" }], 
+    documentSelector: [{ pattern: "**" }]
   };
 
   // Create the language client and start the client
@@ -31,31 +32,48 @@ export function activate(context: vscode.ExtensionContext) {
   // Start the client. This will also launch the server
   client.start();
 
-  client.onRequest("textDocument/completion", (params) => {
-    console.log("HERE WE GO");
-    console.log(params);
-  });
-
-  // Register functions
-  const command = 'lsp-ai.generate';
-  const commandHandler = () => {
-    const editor = vscode.window.activeTextEditor;
-    console.log("SENDING REQUEST FOR GENERATE");
-    console.log(editor);
+  // Register generate function
+  const generateCommand = 'lsp-ai.generate';
+  const generateCommandHandler = (editor) => {
     let params = {
       textDocument: {
         uri: editor.document.uri.toString(),
       },
       position: editor.selection.active
     };
-    console.log(params);
     client.sendRequest("textDocument/generate", params).then(result => {
-      console.log(result);
+      console.log("RECEIVED RESULT", result);
+      editor.edit((edit) => {
+        edit.insert(editor.selection.active, result["generatedText"]);
+      });
     }).catch(error => {
-      console.error(error);
+      console.error("Error making generate request", error);
     });
   };
-  context.subscriptions.push(vscode.commands.registerCommand(command, commandHandler));
+  context.subscriptions.push(vscode.commands.registerTextEditorCommand(generateCommand, generateCommandHandler));
+
+  
+  // Register functions
+  const generateStreamCommand = 'lsp-ai.generateStream';
+  const generateStreamCommandHandler = (editor) => {
+    let params = {
+      textDocument: {
+        uri: editor.document.uri.toString(),
+      },
+      position: editor.selection.active,
+      partialResultToken: uuidv4() 
+    };
+    console.log("PARAMS: ", params);
+    client.sendRequest("textDocument/generateStream", params).then(result => {
+      console.log("RECEIVED RESULT", result);
+      editor.edit((edit) => {
+        edit.insert(editor.selection.active, result["generatedText"]);
+      });
+    }).catch(error => {
+      console.error("Error making generate request", error);
+    });
+  };
+  context.subscriptions.push(vscode.commands.registerTextEditorCommand(generateStreamCommand, generateStreamCommandHandler));
 }
 
 export function deactivate(): Thenable<void> | undefined {
