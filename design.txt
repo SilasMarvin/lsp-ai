@@ -1,0 +1,23 @@
+# Overview
+
+LSP AI should support multiple transform_backends:
+- Python - LLAMA CPP
+- Python - SOME OTHER LIBRARY 
+- PostgresML
+
+pub trait TransformBackend {
+    // These all take memory backends as an argument
+	do_completion()
+	do_generate()
+	do_generate_stream()
+}
+
+LSP AI should support multiple memory_backends:
+- SIMPLE FILE STORE
+- IN MEMORY VECTOR STORE
+- PostgresML
+
+pub trait MemoryBackend {
+	// Some file change ones
+	get_context() // Depending on the memory backend this will do very different things
+}

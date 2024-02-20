@@ -1,4 +1,4 @@
-use lsp_types::{PartialResultParams, ProgressToken, TextDocumentPositionParams};
+use lsp_types::{ProgressToken, TextDocumentPositionParams};
 use serde::{Deserialize, Serialize};
 
 pub enum GenerateStream {}

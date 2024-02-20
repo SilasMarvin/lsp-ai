@@ -1,30 +1,27 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
+
 use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId};
 use lsp_types::{
     request::Completion, CompletionOptions, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     RenameFilesParams, ServerCapabilities, TextDocumentSyncKind,
 };
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use pyo3::prelude::*;
-use ropey::Rope;
-use serde::Deserialize;
-use std::{collections::HashMap, sync::Arc, thread};
+use std::{sync::Arc, thread};
 
+mod configuration;
 mod custom_requests;
+mod memory_backends;
+mod transformer_backends;
+mod utils;
 mod worker;
 
+use configuration::Configuration;
 use custom_requests::generate::Generate;
-use worker::{CompletionRequest, GenerateRequest, WorkerRequest};
+use memory_backends::MemoryBackend;
+use transformer_backends::TransformerBackend;
+use worker::{CompletionRequest, GenerateRequest, Worker, WorkerRequest};
 
 use crate::{custom_requests::generate_stream::GenerateStream, worker::GenerateStreamRequest};
-
-pub static PY_MODULE: Lazy<Result<Py<PyAny>>> = Lazy::new(|| {
-    pyo3::Python::with_gil(|py| -> Result<Py<PyAny>> {
-        let src = include_str!("python/transformers.py");
-        Ok(pyo3::types::PyModule::from_code(py, src, "transformers.py", "transformers")?.into())
-    })
-});
 
 // Taken directly from: https://github.com/rust-lang/rust-analyzer
 fn notification_is<N: lsp_types::notification::Notification>(notification: &Notification) -> bool {
@@ -52,55 +49,47 @@ fn main() -> Result<()> {
         )),
         ..Default::default()
     })?;
-    let initialization_params = connection.initialize(server_capabilities)?;
+    let initialization_args = connection.initialize(server_capabilities)?;
 
-    // Activate the python venv
-    Python::with_gil(|py| -> Result<()> {
-        let activate: Py<PyAny> = PY_MODULE
-            .as_ref()
-            .map_err(anyhow::Error::msg)?
-            .getattr(py, "activate_venv")?;
-
-        activate.call1(py, ("/Users/silas/Projects/lsp-ai/venv",))?;
-        Ok(())
-    })?;
-
-    main_loop(connection, initialization_params)?;
+    main_loop(connection, initialization_args)?;
     io_threads.join()?;
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct Params {}
-
 // This main loop is tricky
 // We create a worker thread that actually does the heavy lifting because we do not want to process every completion request we get
 // Completion requests may take a few seconds given the model configuration and hardware allowed, and we only want to process the latest completion request
-fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
-    let _params: Params = serde_json::from_value(params)?;
+// Note that we also want to have the memory backend in the worker thread as that may also involve heavy computations
+fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
+    let args = Configuration::new(args)?;
 
-    // Set the model
-    Python::with_gil(|py| -> Result<()> {
-        let activate: Py<PyAny> = PY_MODULE
-            .as_ref()
-            .map_err(anyhow::Error::msg)?
-            .getattr(py, "set_model")?;
-        activate.call1(py, ("",))?;
-        Ok(())
-    })?;
+    // Set the transformer_backend
+    let transformer_backend: Box<dyn TransformerBackend + Send> = args.clone().try_into()?;
+    transformer_backend.init()?;
 
-    // Prep variables
+    // Set the memory_backend
+    let memory_backend: Arc<Mutex<Box<dyn MemoryBackend + Send>>> =
+        Arc::new(Mutex::new(args.clone().try_into()?));
+
+    // Wrap the connection for sharing between threads
     let connection = Arc::new(connection);
-    let mut file_map: HashMap<String, Rope> = HashMap::new();
 
     // How we communicate between the worker and receiver threads
     let last_worker_request = Arc::new(Mutex::new(None));
 
     // Thread local variables
+    let thread_memory_backend = memory_backend.clone();
     let thread_last_worker_request = last_worker_request.clone();
     let thread_connection = connection.clone();
+    // TODO: Pass some backend into here
     thread::spawn(move || {
-        worker::run(thread_last_worker_request, thread_connection);
+        Worker::new(
+            transformer_backend,
+            thread_memory_backend,
+            thread_last_worker_request,
+            thread_connection,
+        )
+        .run();
     });
 
     for msg in &connection.receiver {
@@ -115,41 +104,30 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
                 if request_is::<Completion>(&req) {
                     match cast::<Completion>(req) {
                         Ok((id, params)) => {
-                            let rope = file_map
-                                .get(params.text_document_position.text_document.uri.as_str())
-                                .context("Error file not found")?
-                                .clone();
+                            eprintln!("******{:?}********", id);
                             let mut lcr = last_worker_request.lock();
-                            let completion_request = CompletionRequest::new(id, params, rope);
+                            let completion_request = CompletionRequest::new(id, params);
                             *lcr = Some(WorkerRequest::Completion(completion_request));
                         }
-                        Err(err) => panic!("{err:?}"),
+                        Err(err) => eprintln!("{err:?}"),
                     }
                 } else if request_is::<Generate>(&req) {
                     match cast::<Generate>(req) {
                         Ok((id, params)) => {
-                            let rope = file_map
-                                .get(params.text_document_position.text_document.uri.as_str())
-                                .context("Error file not found")?
-                                .clone();
                             let mut lcr = last_worker_request.lock();
-                            let completion_request = GenerateRequest::new(id, params, rope);
+                            let completion_request = GenerateRequest::new(id, params);
                             *lcr = Some(WorkerRequest::Generate(completion_request));
                         }
-                        Err(err) => panic!("{err:?}"),
+                        Err(err) => eprintln!("{err:?}"),
                     }
                 } else if request_is::<GenerateStream>(&req) {
                     match cast::<GenerateStream>(req) {
                         Ok((id, params)) => {
-                            let rope = file_map
-                                .get(params.text_document_position.text_document.uri.as_str())
-                                .context("Error file not found")?
-                                .clone();
                             let mut lcr = last_worker_request.lock();
-                            let completion_request = GenerateStreamRequest::new(id, params, rope);
+                            let completion_request = GenerateStreamRequest::new(id, params);
                             *lcr = Some(WorkerRequest::GenerateStream(completion_request));
                         }
-                        Err(err) => panic!("{err:?}"),
+                        Err(err) => eprintln!("{err:?}"),
                     }
                 } else {
                     eprintln!("lsp-ai currently only supports textDocument/completion, textDocument/generate and textDocument/generateStream")
@@ -158,33 +136,13 @@ fn main_loop(connection: Connection, params: serde_json::Value) -> Result<()> {
             Message::Notification(not) => {
                 if notification_is::<lsp_types::notification::DidOpenTextDocument>(&not) {
                     let params: DidOpenTextDocumentParams = serde_json::from_value(not.params)?;
-                    let rope = Rope::from_str(&params.text_document.text);
-                    file_map.insert(params.text_document.uri.to_string(), rope);
+                    memory_backend.lock().opened_text_document(params)?;
                 } else if notification_is::<lsp_types::notification::DidChangeTextDocument>(&not) {
                     let params: DidChangeTextDocumentParams = serde_json::from_value(not.params)?;
-                    let rope = file_map
-                        .get_mut(params.text_document.uri.as_str())
-                        .context("Error trying to get file that does not exist")?;
-                    for change in params.content_changes {
-                        // If range is ommitted, text is the new text of the document
-                        if let Some(range) = change.range {
-                            let start_index = rope.line_to_char(range.start.line as usize)
-                                + range.start.character as usize;
-                            let end_index = rope.line_to_char(range.end.line as usize)
-                                + range.end.character as usize;
-                            rope.remove(start_index..end_index);
-                            rope.insert(start_index, &change.text);
-                        } else {
-                            *rope = Rope::from_str(&change.text);
-                        }
-                    }
+                    memory_backend.lock().changed_text_document(params)?;
                 } else if notification_is::<lsp_types::notification::DidRenameFiles>(&not) {
                     let params: RenameFilesParams = serde_json::from_value(not.params)?;
-                    for file_rename in params.files {
-                        if let Some(rope) = file_map.remove(&file_rename.old_uri) {
-                            file_map.insert(file_rename.new_uri, rope);
-                        }
-                    }
+                    memory_backend.lock().renamed_file(params)?;
                 }
             }
             _ => (),

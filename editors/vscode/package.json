@@ -24,7 +24,17 @@
         "command": "lsp-ai.generateStream",
         "title": "LSP AI Generate Stream"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Configuration",
+      "properties": {
+        "configuration.json": {
+          "type": "json",
+          "default": "{}",
+          "description": "JSON configuration for LSP AI"
+        }
+      }
+    }
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
