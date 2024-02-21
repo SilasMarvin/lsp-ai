@@ -1,15 +1,14 @@
 use crate::{
     configuration::{Configuration, ValidTransformerBackend},
     worker::{
-        DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateRequest,
-        GenerateStreamRequest,
+        DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
     },
 };
 
 pub mod llama_cpp;
 
 pub trait TransformerBackend {
-    fn init(&self) -> anyhow::Result<()>;
+    // Should all take an enum of chat messages or just a string for completion
     fn do_completion(&self, prompt: &str) -> anyhow::Result<DoCompletionResponse>;
     fn do_generate(&self, prompt: &str) -> anyhow::Result<DoGenerateResponse>;
     fn do_generate_stream(
@@ -24,7 +23,7 @@ impl TryFrom<Configuration> for Box<dyn TransformerBackend + Send> {
     fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {
         match configuration.get_transformer_backend()? {
             ValidTransformerBackend::LlamaCPP => {
-                Ok(Box::new(llama_cpp::LlamaCPP::new(configuration)))
+                Ok(Box::new(llama_cpp::LlamaCPP::new(configuration)?))
             }
             _ => unimplemented!(),
         }

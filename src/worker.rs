@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use std::{sync::Arc, thread};
 
 use crate::custom_requests::generate::{GenerateParams, GenerateResult};
-use crate::custom_requests::generate_stream::{GenerateStreamParams, GenerateStreamResult};
+use crate::custom_requests::generate_stream::GenerateStreamParams;
 use crate::memory_backends::MemoryBackend;
 use crate::transformer_backends::TransformerBackend;
 use crate::utils::ToResponseError;
@@ -94,11 +94,19 @@ impl Worker {
             .memory_backend
             .lock()
             .build_prompt(&request.params.text_document_position)?;
-        eprintln!("\n\n****************{}***************\n\n", prompt);
+        let filter_text = self
+            .memory_backend
+            .lock()
+            .get_filter_text(&request.params.text_document_position)?;
+        eprintln!("\nPROMPT\n****************{}***************\n\n", prompt);
         let response = self.transformer_backend.do_completion(&prompt)?;
         eprintln!(
-            "\n\n****************{}***************\n\n",
+            "\nINSERT TEXT\n****************{}***************\n\n",
             response.insert_text
+        );
+        eprintln!(
+            "\nFILTER TEXT\n&&&*************{}***********&&&\n\n",
+            filter_text
         );
         let completion_text_edit = TextEdit::new(
             Range::new(
@@ -115,6 +123,7 @@ impl Worker {
         );
         let item = CompletionItem {
             label: format!("ai - {}", response.insert_text),
+            filter_text: Some(filter_text),
             text_edit: Some(lsp_types::CompletionTextEdit::Edit(completion_text_edit)),
             kind: Some(CompletionItemKind::TEXT),
             ..Default::default()

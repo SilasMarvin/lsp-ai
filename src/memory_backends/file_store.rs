@@ -22,6 +22,18 @@ impl FileStore {
 }
 
 impl MemoryBackend for FileStore {
+    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
+        let rope = self
+            .file_map
+            .get(position.text_document.uri.as_str())
+            .context("Error file not found")?
+            .clone();
+        Ok(rope
+            .get_line(position.position.line as usize)
+            .context("Error getting filter_text")?
+            .to_string())
+    }
+
     fn build_prompt(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
         let rope = self
             .file_map

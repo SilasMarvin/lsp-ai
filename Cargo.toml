@@ -17,11 +17,8 @@ rand = "0.8.5"
 tokenizers = "0.14.1"
 parking_lot = "0.12.1"
 once_cell = "1.19.0"
-pyo3 = { version = "0.20.2", features = ["auto-initialize"] }
 directories = "5.0.1"
-
-[build-dependencies]
-directories = "5.0.1"
+llama-cpp-2 = "0.1.27"
 
 [features]
 default = []

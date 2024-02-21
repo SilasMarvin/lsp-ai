@@ -9,6 +9,8 @@ const DEFAULT_LLAMA_CPP_N_CTX: usize = 1024;
 const DEFAULT_MAX_COMPLETION_TOKENS: usize = 32;
 const DEFAULT_MAX_GENERATION_TOKENS: usize = 256;
 
+pub type Kwargs = HashMap<String, Value>;
+
 pub enum ValidMemoryBackend {
     FileStore,
     PostgresML,
@@ -22,12 +24,11 @@ pub enum ValidTransformerBackend {
 // TODO: Review this for real lol
 #[derive(Clone, Deserialize)]
 pub struct FIM {
-    prefix: String,
+    start: String,
     middle: String,
-    suffix: String,
+    end: String,
 }
 
-// TODO: Add some default things
 #[derive(Clone, Deserialize)]
 pub struct MaxNewTokens {
     pub completion: usize,
@@ -49,17 +50,38 @@ struct ValidMemoryConfiguration {
 }
 
 #[derive(Clone, Deserialize)]
+struct ChatMessages {
+    role: String,
+    message: String,
+}
+
+#[derive(Clone, Deserialize)]
+struct Chat {
+    completion: Option<Vec<ChatMessages>>,
+    generation: Option<Vec<ChatMessages>>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct Model {
+    pub repository: String,
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
 struct ModelGGUF {
-    repository: String,
-    name: String,
+    // The model to use
+    #[serde(flatten)]
+    model: Model,
     // Fill in the middle support
     fim: Option<FIM>,
     // The maximum number of new tokens to generate
     #[serde(default)]
     max_new_tokens: MaxNewTokens,
+    // Chat args
+    chat: Option<Chat>,
     // Kwargs passed to LlamaCPP
     #[serde(flatten)]
-    kwargs: HashMap<String, Value>,
+    kwargs: Kwargs,
 }
 
 #[derive(Clone, Deserialize)]
@@ -75,7 +97,6 @@ struct ValidLinuxTransformerConfiguration {
 #[derive(Clone, Deserialize)]
 struct ValidConfiguration {
     memory: ValidMemoryConfiguration,
-    // TODO: Add renam here
     #[cfg(target_os = "macos")]
     #[serde(alias = "macos")]
     transformer: ValidMacTransformerConfiguration,
@@ -101,6 +122,22 @@ impl Configuration {
         Ok(Self {
             valid_config: valid_args,
         })
+    }
+
+    pub fn get_model(&self) -> Result<&Model> {
+        if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
+            Ok(&model_gguf.model)
+        } else {
+            panic!("We currently only support gguf models using llama cpp")
+        }
+    }
+
+    pub fn get_model_kwargs(&self) -> Result<&Kwargs> {
+        if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
+            Ok(&model_gguf.kwargs)
+        } else {
+            panic!("We currently only support gguf models using llama cpp")
+        }
     }
 
     pub fn get_memory_backend(&self) -> Result<ValidMemoryBackend> {
@@ -162,16 +199,44 @@ mod tests {
                 },
                 "macos": {
                     "model_gguf": {
-                        "repository": "deepseek-coder-6.7b-base",
-                        "name": "Q4_K_M.gguf",
+                        // "repository": "deepseek-coder-6.7b-base",
+                        // "name": "Q4_K_M.gguf",
+                        "repository": "stabilityai/stablelm-2-zephyr-1_6b",
+                        "name": "stablelm-2-zephyr-1_6b-Q5_K_M.gguf",
                         "max_new_tokens": {
                             "completion": 32,
                             "generation": 256,
                         },
+                        // "fim": {
+                        //     "start": "",
+                        //     "middle": "",
+                        //     "end": ""
+                        // },
+                        "chat": {
+                            "completion": [
+                                {
+                                    "role": "system",
+                                    "message": "You are a code completion chatbot. Use the following context to complete the next segement of code. Keep your response brief.\n\n{context}",
+                                },
+                                {
+                                    "role": "user",
+                                    "message": "Complete the following code: \n\n{code}"
+                                }
+                            ],
+                            "generation": [
+                                {
+                                    "role": "system",
+                                    "message": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{context}",
+                                },
+                                {
+                                    "role": "user",
+                                    "message": "Complete the following code: \n\n{code}"
+                                }
+                            ]
+                        },
                         "n_ctx": 2048,
                         "n_threads": 8,
                         "n_gpu_layers": 35,
-                        "chat_template": "",
                     }
                 },
             }

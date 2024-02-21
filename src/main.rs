@@ -65,7 +65,6 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
 
     // Set the transformer_backend
     let transformer_backend: Box<dyn TransformerBackend + Send> = args.clone().try_into()?;
-    transformer_backend.init()?;
 
     // Set the memory_backend
     let memory_backend: Arc<Mutex<Box<dyn MemoryBackend + Send>>> =
