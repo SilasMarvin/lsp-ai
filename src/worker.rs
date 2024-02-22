@@ -98,15 +98,11 @@ impl Worker {
             .memory_backend
             .lock()
             .get_filter_text(&request.params.text_document_position)?;
-        eprintln!("\nPROMPT\n****************{}***************\n\n", prompt);
+        eprintln!("\nPROMPT**************\n{}\n******************\n", prompt);
         let response = self.transformer_backend.do_completion(&prompt)?;
         eprintln!(
-            "\nINSERT TEXT\n****************{}***************\n\n",
+            "\nINSERT TEXT&&&&&&&&&&&&&&&&&&&\n{}\n&&&&&&&&&&&&&&&&&&\n",
             response.insert_text
-        );
-        eprintln!(
-            "\nFILTER TEXT\n&&&*************{}***********&&&\n\n",
-            filter_text
         );
         let completion_text_edit = TextEdit::new(
             Range::new(

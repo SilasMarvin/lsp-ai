@@ -24,9 +24,9 @@ pub enum ValidTransformerBackend {
 // TODO: Review this for real lol
 #[derive(Clone, Deserialize)]
 pub struct FIM {
-    start: String,
-    middle: String,
-    end: String,
+    pub start: String,
+    pub middle: String,
+    pub end: String,
 }
 
 #[derive(Clone, Deserialize)]
@@ -180,8 +180,12 @@ impl Configuration {
         }
     }
 
-    pub fn supports_fim(&self) -> bool {
-        false
+    pub fn get_fim(&self) -> Option<&FIM> {
+        if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
+            model_gguf.fim.as_ref()
+        } else {
+            panic!("We currently only support gguf models using llama cpp")
+        }
     }
 }
 
@@ -207,11 +211,11 @@ mod tests {
                             "completion": 32,
                             "generation": 256,
                         },
-                        // "fim": {
-                        //     "start": "",
-                        //     "middle": "",
-                        //     "end": ""
-                        // },
+                        "fim": {
+                            "start": "<fim_prefix>",
+                            "middle": "<fim_suffix>",
+                            "end": "<fim_middle>"
+                        },
                         "chat": {
                             "completion": [
                                 {

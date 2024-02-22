@@ -94,7 +94,7 @@ impl Model {
             )
         }
 
-        let mut batch = LlamaBatch::new(512, 1);
+        let mut batch = LlamaBatch::new(n_cxt, 1);
 
         let last_index: i32 = (tokens_list.len() - 1) as i32;
         for (i, token) in (0_i32..).zip(tokens_list.into_iter()) {
@@ -107,11 +107,12 @@ impl Model {
             .with_context(|| "llama_decode() failed")?;
 
         // main loop
+        let n_start = batch.n_tokens();
         let mut output: Vec<String> = vec![];
-        let mut n_cur = batch.n_tokens();
+        let mut n_cur = n_start;
         let mut n_decode = 0;
         let t_main_start = ggml_time_us();
-        while (n_cur as usize) <= max_new_tokens {
+        while (n_cur as usize) <= (n_start as usize + max_new_tokens) {
             // sample the next token
             {
                 let candidates = ctx.candidates_ith(batch.n_tokens() - 1);

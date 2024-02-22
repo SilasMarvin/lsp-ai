@@ -35,33 +35,46 @@ impl MemoryBackend for FileStore {
     }
 
     fn build_prompt(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
-        let rope = self
+        let mut rope = self
             .file_map
             .get(position.text_document.uri.as_str())
             .context("Error file not found")?
             .clone();
 
-        if self.configuration.supports_fim() {
-            // We will want to have some kind of infill support we add
-            // rope.insert(cursor_index, "<｜fim_hole｜>");
-            // rope.insert(0, "<｜fim_start｜>");
-            // rope.insert(rope.len_chars(), "<｜fim_end｜>");
-            // let prompt = rope.to_string();
-            unimplemented!()
-        } else {
-            // Convert rope to correct prompt for llm
-            let cursor_index = rope.line_to_char(position.position.line as usize)
-                + position.position.character as usize;
+        let cursor_index = rope.line_to_char(position.position.line as usize)
+            + position.position.character as usize;
 
-            let start = cursor_index
-                .checked_sub(self.configuration.get_maximum_context_length())
-                .unwrap_or(0);
-            eprintln!("############ {start} - {cursor_index} #############");
-
-            Ok(rope
-                .get_slice(start..cursor_index)
-                .context("Error getting rope slice")?
-                .to_string())
+        // We only want to do FIM if the user has enabled it, and the cursor is not at the end of the file
+        match self.configuration.get_fim() {
+            Some(fim) if rope.len_chars() != cursor_index => {
+                let max_length = self.configuration.get_maximum_context_length();
+                let start = cursor_index.checked_sub(max_length / 2).unwrap_or(0);
+                let end = rope
+                    .len_chars()
+                    .min(cursor_index + (max_length - (start - cursor_index)));
+                rope.insert(end, &fim.end);
+                rope.insert(cursor_index, &fim.middle);
+                rope.insert(start, &fim.start);
+                let rope_slice = rope
+                    .get_slice(
+                        start
+                            ..end
+                                + fim.start.chars().count()
+                                + fim.middle.chars().count()
+                                + fim.end.chars().count(),
+                    )
+                    .context("Error getting rope slice")?;
+                Ok(rope_slice.to_string())
+            }
+            _ => {
+                let start = cursor_index
+                    .checked_sub(self.configuration.get_maximum_context_length())
+                    .unwrap_or(0);
+                let rope_slice = rope
+                    .get_slice(start..cursor_index)
+                    .context("Error getting rope slice")?;
+                Ok(rope_slice.to_string())
+            }
         }
     }
 
