@@ -7,21 +7,20 @@ use llama_cpp_2::{
     model::{params::LlamaModelParams, AddBos, LlamaModel},
     token::data_array::LlamaTokenDataArray,
 };
+use once_cell::sync::Lazy;
 use std::{num::NonZeroU32, path::PathBuf, time::Duration};
 
 use crate::configuration::Kwargs;
 
+static BACKEND: Lazy<LlamaBackend> = Lazy::new(|| LlamaBackend::init().unwrap());
+
 pub struct Model {
-    backend: LlamaBackend,
     model: LlamaModel,
     n_ctx: NonZeroU32,
 }
 
 impl Model {
     pub fn new(model_path: PathBuf, kwargs: &Kwargs) -> anyhow::Result<Self> {
-        // Init the backend
-        let backend = LlamaBackend::init()?;
-
         // Get n_gpu_layers if set in kwargs
         // As a default we set it to 1000, which should put all layers on the GPU
         let n_gpu_layers = kwargs
@@ -43,7 +42,7 @@ impl Model {
 
         // Load the model
         eprintln!("SETTING MODEL AT PATH: {:?}", model_path);
-        let model = LlamaModel::load_from_file(&backend, model_path, &model_params)?;
+        let model = LlamaModel::load_from_file(&BACKEND, model_path, &model_params)?;
         eprintln!("\nMODEL SET\n");
 
         // Get n_ctx if set in kwargs
@@ -58,11 +57,7 @@ impl Model {
             .unwrap_or_else(|| Ok(NonZeroU32::new(2048)))?
             .context("n_ctx must not be zero")?;
 
-        Ok(Model {
-            backend,
-            model,
-            n_ctx,
-        })
+        Ok(Model { model, n_ctx })
     }
 
     pub fn complete(&self, prompt: &str, max_new_tokens: usize) -> anyhow::Result<String> {
@@ -71,7 +66,7 @@ impl Model {
 
         let mut ctx = self
             .model
-            .new_context(&self.backend, ctx_params)
+            .new_context(&BACKEND, ctx_params)
             .with_context(|| "unable to create the llama_context")?;
 
         let tokens_list = self

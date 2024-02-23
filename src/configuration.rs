@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 
 #[cfg(target_os = "macos")]
@@ -21,7 +21,6 @@ pub enum ValidTransformerBackend {
     PostgresML,
 }
 
-// TODO: Review this for real lol
 #[derive(Clone, Deserialize)]
 pub struct FIM {
     pub start: String,
@@ -47,6 +46,14 @@ impl Default for MaxNewTokens {
 #[derive(Clone, Deserialize)]
 struct ValidMemoryConfiguration {
     file_store: Option<Value>,
+}
+
+impl Default for ValidMemoryConfiguration {
+    fn default() -> Self {
+        Self {
+            file_store: Some(json!({})),
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -84,9 +91,36 @@ struct ModelGGUF {
     kwargs: Kwargs,
 }
 
+impl Default for ModelGGUF {
+    fn default() -> Self {
+        Self {
+            model: Model {
+                repository: "stabilityai/stable-code-3b".to_string(),
+                name: Some("stable-code-3b-Q5_K_M.gguf".to_string()),
+            },
+            fim: Some(FIM {
+                start: "<fim_prefix>".to_string(),
+                middle: "<fim_suffix>".to_string(),
+                end: "<fim_middle>".to_string(),
+            }),
+            max_new_tokens: MaxNewTokens::default(),
+            chat: None,
+            kwargs: Kwargs::default(),
+        }
+    }
+}
+
 #[derive(Clone, Deserialize)]
 struct ValidMacTransformerConfiguration {
     model_gguf: Option<ModelGGUF>,
+}
+
+impl Default for ValidMacTransformerConfiguration {
+    fn default() -> Self {
+        Self {
+            model_gguf: Some(ModelGGUF::default()),
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -94,7 +128,15 @@ struct ValidLinuxTransformerConfiguration {
     model_gguf: Option<ModelGGUF>,
 }
 
-#[derive(Clone, Deserialize)]
+impl Default for ValidLinuxTransformerConfiguration {
+    fn default() -> Self {
+        Self {
+            model_gguf: Some(ModelGGUF::default()),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Default)]
 struct ValidConfiguration {
     memory: ValidMemoryConfiguration,
     #[cfg(target_os = "macos")]
@@ -115,10 +157,11 @@ impl Configuration {
         let configuration_args = args
             .as_object_mut()
             .context("Server configuration must be a JSON object")?
-            .remove("initializationOptions")
-            .unwrap_or_default();
-        let valid_args: ValidConfiguration = serde_json::from_value(configuration_args)?;
-        // TODO: Make sure they only specified one model or something ya know
+            .remove("initializationOptions");
+        let valid_args = match configuration_args {
+            Some(configuration_args) => serde_json::from_value(configuration_args)?,
+            None => ValidConfiguration::default(),
+        };
         Ok(Self {
             valid_config: valid_args,
         })
@@ -192,7 +235,6 @@ impl Configuration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn custom_mac_gguf_model() {
@@ -239,7 +281,6 @@ mod tests {
                             ]
                         },
                         "n_ctx": 2048,
-                        "n_threads": 8,
                         "n_gpu_layers": 35,
                     }
                 },

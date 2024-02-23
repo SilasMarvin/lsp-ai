@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.75"
-lsp-server = "0.7.4"
+# lsp-server = "0.7.4"
+lsp-server = { path = "../rust-analyzer/lib/lsp-server" }
 lsp-types = "0.94.1"
 ropey = "1.6.1"
 serde = "1.0.190"
@@ -18,7 +19,8 @@ tokenizers = "0.14.1"
 parking_lot = "0.12.1"
 once_cell = "1.19.0"
 directories = "5.0.1"
-llama-cpp-2 = "0.1.27"
+# llama-cpp-2 = "0.1.27"
+llama-cpp-2 = { path = "../llama-cpp-rs/llama-cpp-2" }
 
 [features]
 default = []

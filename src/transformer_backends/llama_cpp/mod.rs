@@ -47,12 +47,14 @@ impl TransformerBackend for LlamaCPP {
 
     fn do_generate(&self, prompt: &str) -> anyhow::Result<DoGenerateResponse> {
         let max_new_tokens = self.configuration.get_max_new_tokens().generation;
-        unimplemented!()
+        self.model
+            .complete(prompt, max_new_tokens)
+            .map(|generated_text| DoGenerateResponse { generated_text })
     }
 
     fn do_generate_stream(
         &self,
-        request: &GenerateStreamRequest,
+        _request: &GenerateStreamRequest,
     ) -> anyhow::Result<DoGenerateStreamResponse> {
         unimplemented!()
     }

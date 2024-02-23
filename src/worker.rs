@@ -142,7 +142,7 @@ impl Worker {
             .memory_backend
             .lock()
             .build_prompt(&request.params.text_document_position)?;
-        eprintln!("\n\n****************{}***************\n\n", prompt);
+        eprintln!("\nPROMPT*************\n{}\n************\n", prompt);
         let response = self.transformer_backend.do_generate(&prompt)?;
         let result = GenerateResult {
             generated_text: response.generated_text,

@@ -98,7 +98,7 @@ dependencies = [
  "bitflags 2.4.2",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools",
  "lazy_static",
  "lazycell",
  "log",
@@ -567,15 +567,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -628,9 +619,8 @@ checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
 
 [[package]]
 name = "llama-cpp-2"
-version = "0.1.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "747243ba163eb361f5d6d483a177450240ce6ca70cefcb7c489f6333e9fe4300"
+version = "0.1.25"
+source = "git+https://github.com/SilasMarvin/llama-cpp-rs?branch=silas-8-metal-on-mac#8c61f584e7aa200581b711147e685821190aa025"
 dependencies = [
  "llama-cpp-sys-2",
  "thiserror",
@@ -639,9 +629,8 @@ dependencies = [
 
 [[package]]
 name = "llama-cpp-sys-2"
-version = "0.1.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3844a3f833eca795309fec9223a316ced1cebeff9c5cfce5ee760825040d281f"
+version = "0.1.25"
+source = "git+https://github.com/SilasMarvin/llama-cpp-rs?branch=silas-8-metal-on-mac#8c61f584e7aa200581b711147e685821190aa025"
 dependencies = [
  "bindgen",
  "cc",
@@ -685,8 +674,6 @@ dependencies = [
 [[package]]
 name = "lsp-server"
 version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "248f65b78f6db5d8e1b1604b4098a28b43d21a8eb1deeca22b1c421b276c7095"
 dependencies = [
  "crossbeam-channel",
  "log",
@@ -1011,7 +998,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "059f538b55efd2309c9794130bc149c6a553db90e9d99c2030785c82f0bd7df9"
 dependencies = [
  "either",
- "itertools 0.11.0",
+ "itertools",
  "rayon",
 ]
 
@@ -1387,7 +1374,7 @@ dependencies = [
  "esaxx-rs",
  "getrandom",
  "indicatif",
- "itertools 0.11.0",
+ "itertools",
  "lazy_static",
  "log",
  "macro_rules_attribute",
