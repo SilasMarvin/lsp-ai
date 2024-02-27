@@ -36,6 +36,8 @@ impl GenerateRequest {
     }
 }
 
+// The generate stream is not yet ready but we don't want to remove it
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct GenerateStreamRequest {
     id: RequestId,
@@ -98,10 +100,10 @@ impl Worker {
             .memory_backend
             .lock()
             .get_filter_text(&request.params.text_document_position)?;
-        eprintln!("\nPROMPT**************\n{}\n******************\n", prompt);
+        eprintln!("\nPROMPT**************\n{:?}\n******************\n", prompt);
         let response = self.transformer_backend.do_completion(&prompt)?;
         eprintln!(
-            "\nINSERT TEXT&&&&&&&&&&&&&&&&&&&\n{}\n&&&&&&&&&&&&&&&&&&\n",
+            "\nINSERT TEXT&&&&&&&&&&&&&&&&&&&\n{:?}\n&&&&&&&&&&&&&&&&&&\n",
             response.insert_text
         );
         let completion_text_edit = TextEdit::new(
@@ -142,7 +144,7 @@ impl Worker {
             .memory_backend
             .lock()
             .build_prompt(&request.params.text_document_position)?;
-        eprintln!("\nPROMPT*************\n{}\n************\n", prompt);
+        eprintln!("\nPROMPT*************\n{:?}\n************\n", prompt);
         let response = self.transformer_backend.do_generate(&prompt)?;
         let result = GenerateResult {
             generated_text: response.generated_text,

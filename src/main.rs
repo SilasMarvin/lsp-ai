@@ -11,6 +11,8 @@ use std::{sync::Arc, thread};
 mod configuration;
 mod custom_requests;
 mod memory_backends;
+mod template;
+mod tokenizer;
 mod transformer_backends;
 mod utils;
 mod worker;
@@ -80,7 +82,6 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     let thread_memory_backend = memory_backend.clone();
     let thread_last_worker_request = last_worker_request.clone();
     let thread_connection = connection.clone();
-    // TODO: Pass some backend into here
     thread::spawn(move || {
         Worker::new(
             transformer_backend,

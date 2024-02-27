@@ -7,6 +7,18 @@ use crate::configuration::{Configuration, ValidMemoryBackend};
 
 pub mod file_store;
 
+#[derive(Debug)]
+pub struct Prompt {
+    pub context: String,
+    pub code: String,
+}
+
+impl Prompt {
+    fn new(context: String, code: String) -> Self {
+        Self { context, code }
+    }
+}
+
 pub trait MemoryBackend {
     fn init(&self) -> anyhow::Result<()> {
         Ok(())
@@ -14,8 +26,7 @@ pub trait MemoryBackend {
     fn opened_text_document(&mut self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
     fn changed_text_document(&mut self, params: DidChangeTextDocumentParams) -> anyhow::Result<()>;
     fn renamed_file(&mut self, params: RenameFilesParams) -> anyhow::Result<()>;
-    // Should return an enum of either chat messages or just a prompt string
-    fn build_prompt(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String>;
+    fn build_prompt(&self, position: &TextDocumentPositionParams) -> anyhow::Result<Prompt>;
     fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String>;
 }
 

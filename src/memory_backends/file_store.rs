@@ -3,9 +3,9 @@ use lsp_types::TextDocumentPositionParams;
 use ropey::Rope;
 use std::collections::HashMap;
 
-use crate::configuration::Configuration;
+use crate::{configuration::Configuration, utils::characters_to_estimated_tokens};
 
-use super::MemoryBackend;
+use super::{MemoryBackend, Prompt};
 
 pub struct FileStore {
     configuration: Configuration,
@@ -34,7 +34,7 @@ impl MemoryBackend for FileStore {
             .to_string())
     }
 
-    fn build_prompt(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
+    fn build_prompt(&self, position: &TextDocumentPositionParams) -> anyhow::Result<Prompt> {
         let mut rope = self
             .file_map
             .get(position.text_document.uri.as_str())
@@ -45,13 +45,14 @@ impl MemoryBackend for FileStore {
             + position.position.character as usize;
 
         // We only want to do FIM if the user has enabled it, and the cursor is not at the end of the file
-        match self.configuration.get_fim() {
+        let code = match self.configuration.get_fim() {
             Some(fim) if rope.len_chars() != cursor_index => {
-                let max_length = self.configuration.get_maximum_context_length();
+                let max_length =
+                    characters_to_estimated_tokens(self.configuration.get_maximum_context_length());
                 let start = cursor_index.checked_sub(max_length / 2).unwrap_or(0);
                 let end = rope
                     .len_chars()
-                    .min(cursor_index + (max_length - (start - cursor_index)));
+                    .min(cursor_index + (max_length - (cursor_index - start)));
                 rope.insert(end, &fim.end);
                 rope.insert(cursor_index, &fim.middle);
                 rope.insert(start, &fim.start);
@@ -64,18 +65,21 @@ impl MemoryBackend for FileStore {
                                 + fim.end.chars().count(),
                     )
                     .context("Error getting rope slice")?;
-                Ok(rope_slice.to_string())
+                rope_slice.to_string()
             }
             _ => {
                 let start = cursor_index
-                    .checked_sub(self.configuration.get_maximum_context_length())
+                    .checked_sub(characters_to_estimated_tokens(
+                        self.configuration.get_maximum_context_length(),
+                    ))
                     .unwrap_or(0);
                 let rope_slice = rope
                     .get_slice(start..cursor_index)
                     .context("Error getting rope slice")?;
-                Ok(rope_slice.to_string())
+                rope_slice.to_string()
             }
-        }
+        };
+        Ok(Prompt::new("".to_string(), code))
     }
 
     fn opened_text_document(

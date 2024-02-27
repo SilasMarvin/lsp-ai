@@ -3,6 +3,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+use crate::memory_backends::Prompt;
+
 #[cfg(target_os = "macos")]
 const DEFAULT_LLAMA_CPP_N_CTX: usize = 1024;
 
@@ -19,6 +21,20 @@ pub enum ValidMemoryBackend {
 pub enum ValidTransformerBackend {
     LlamaCPP,
     PostgresML,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Chat {
+    pub completion: Option<Vec<ChatMessage>>,
+    pub generation: Option<Vec<ChatMessage>>,
+    pub chat_template: Option<String>,
+    pub chat_format: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -54,18 +70,6 @@ impl Default for ValidMemoryConfiguration {
             file_store: Some(json!({})),
         }
     }
-}
-
-#[derive(Clone, Deserialize)]
-struct ChatMessages {
-    role: String,
-    message: String,
-}
-
-#[derive(Clone, Deserialize)]
-struct Chat {
-    completion: Option<Vec<ChatMessages>>,
-    generation: Option<Vec<ChatMessages>>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -226,6 +230,14 @@ impl Configuration {
     pub fn get_fim(&self) -> Option<&FIM> {
         if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
             model_gguf.fim.as_ref()
+        } else {
+            panic!("We currently only support gguf models using llama cpp")
+        }
+    }
+
+    pub fn get_chat(&self) -> Option<&Chat> {
+        if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
+            model_gguf.chat.as_ref()
         } else {
             panic!("We currently only support gguf models using llama cpp")
         }
