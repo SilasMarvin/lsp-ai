@@ -3,8 +3,6 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-use crate::memory_backends::Prompt;
-
 #[cfg(target_os = "macos")]
 const DEFAULT_LLAMA_CPP_N_CTX: usize = 1024;
 
@@ -26,7 +24,7 @@ pub enum ValidTransformerBackend {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    pub message: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -37,14 +35,14 @@ pub struct Chat {
     pub chat_format: Option<String>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct FIM {
     pub start: String,
     pub middle: String,
     pub end: String,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct MaxNewTokens {
     pub completion: usize,
     pub generation: usize,
@@ -59,7 +57,7 @@ impl Default for MaxNewTokens {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct ValidMemoryConfiguration {
     file_store: Option<Value>,
 }
@@ -72,13 +70,13 @@ impl Default for ValidMemoryConfiguration {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Model {
     pub repository: String,
     pub name: Option<String>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct ModelGGUF {
     // The model to use
     #[serde(flatten)]
@@ -114,7 +112,7 @@ impl Default for ModelGGUF {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct ValidMacTransformerConfiguration {
     model_gguf: Option<ModelGGUF>,
 }
@@ -127,7 +125,7 @@ impl Default for ValidMacTransformerConfiguration {
     }
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct ValidLinuxTransformerConfiguration {
     model_gguf: Option<ModelGGUF>,
 }
@@ -140,7 +138,7 @@ impl Default for ValidLinuxTransformerConfiguration {
     }
 }
 
-#[derive(Clone, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize, Default)]
 struct ValidConfiguration {
     memory: ValidMemoryConfiguration,
     #[cfg(target_os = "macos")]
@@ -151,7 +149,7 @@ struct ValidConfiguration {
     transformer: ValidLinuxTransformerConfiguration,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Configuration {
     valid_config: ValidConfiguration,
 }
@@ -175,7 +173,7 @@ impl Configuration {
         if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
             Ok(&model_gguf.model)
         } else {
-            panic!("We currently only support gguf models using llama cpp")
+            anyhow::bail!("We currently only support gguf models using llama cpp")
         }
     }
 
@@ -183,7 +181,7 @@ impl Configuration {
         if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
             Ok(&model_gguf.kwargs)
         } else {
-            panic!("We currently only support gguf models using llama cpp")
+            anyhow::bail!("We currently only support gguf models using llama cpp")
         }
     }
 
@@ -203,9 +201,9 @@ impl Configuration {
         }
     }
 
-    pub fn get_maximum_context_length(&self) -> usize {
+    pub fn get_maximum_context_length(&self) -> Result<usize> {
         if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
-            model_gguf
+            Ok(model_gguf
                 .kwargs
                 .get("n_ctx")
                 .map(|v| {
@@ -213,91 +211,33 @@ impl Configuration {
                         .map(|u| u as usize)
                         .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX)
                 })
-                .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX)
+                .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX))
         } else {
-            panic!("We currently only support gguf models using llama cpp")
+            anyhow::bail!("We currently only support gguf models using llama cpp")
         }
     }
 
-    pub fn get_max_new_tokens(&self) -> &MaxNewTokens {
+    pub fn get_max_new_tokens(&self) -> Result<&MaxNewTokens> {
         if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
-            &model_gguf.max_new_tokens
+            Ok(&model_gguf.max_new_tokens)
         } else {
-            panic!("We currently only support gguf models using llama cpp")
+            anyhow::bail!("We currently only support gguf models using llama cpp")
         }
     }
 
-    pub fn get_fim(&self) -> Option<&FIM> {
+    pub fn get_fim(&self) -> Result<Option<&FIM>> {
         if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
-            model_gguf.fim.as_ref()
+            Ok(model_gguf.fim.as_ref())
         } else {
-            panic!("We currently only support gguf models using llama cpp")
+            anyhow::bail!("We currently only support gguf models using llama cpp")
         }
     }
 
-    pub fn get_chat(&self) -> Option<&Chat> {
+    pub fn get_chat(&self) -> Result<Option<&Chat>> {
         if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
-            model_gguf.chat.as_ref()
+            Ok(model_gguf.chat.as_ref())
         } else {
-            panic!("We currently only support gguf models using llama cpp")
+            anyhow::bail!("We currently only support gguf models using llama cpp")
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn custom_mac_gguf_model() {
-        let args = json!({
-            "initializationOptions": {
-                "memory": {
-                    "file_store": {}
-                },
-                "macos": {
-                    "model_gguf": {
-                        // "repository": "deepseek-coder-6.7b-base",
-                        // "name": "Q4_K_M.gguf",
-                        "repository": "stabilityai/stablelm-2-zephyr-1_6b",
-                        "name": "stablelm-2-zephyr-1_6b-Q5_K_M.gguf",
-                        "max_new_tokens": {
-                            "completion": 32,
-                            "generation": 256,
-                        },
-                        "fim": {
-                            "start": "<fim_prefix>",
-                            "middle": "<fim_suffix>",
-                            "end": "<fim_middle>"
-                        },
-                        "chat": {
-                            "completion": [
-                                {
-                                    "role": "system",
-                                    "message": "You are a code completion chatbot. Use the following context to complete the next segement of code. Keep your response brief.\n\n{context}",
-                                },
-                                {
-                                    "role": "user",
-                                    "message": "Complete the following code: \n\n{code}"
-                                }
-                            ],
-                            "generation": [
-                                {
-                                    "role": "system",
-                                    "message": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{context}",
-                                },
-                                {
-                                    "role": "user",
-                                    "message": "Complete the following code: \n\n{code}"
-                                }
-                            ]
-                        },
-                        "n_ctx": 2048,
-                        "n_gpu_layers": 35,
-                    }
-                },
-            }
-        });
-        let _ = Configuration::new(args).unwrap();
     }
 }

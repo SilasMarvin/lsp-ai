@@ -7,12 +7,12 @@ use lsp_types::{
 };
 use parking_lot::Mutex;
 use std::{sync::Arc, thread};
+use tracing::error;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 mod configuration;
 mod custom_requests;
 mod memory_backends;
-mod template;
-mod tokenizer;
 mod transformer_backends;
 mod utils;
 mod worker;
@@ -43,6 +43,13 @@ where
 }
 
 fn main() -> Result<()> {
+    // Builds a tracing subscriber from the `LSP_AI_LOG` environment variable
+    // If the variables value is malformed or missing, sets the default log level to ERROR
+    FmtSubscriber::builder()
+        .with_writer(std::io::stderr)
+        .with_env_filter(EnvFilter::from_env("LSP_AI_LOG"))
+        .init();
+
     let (connection, io_threads) = Connection::stdio();
     let server_capabilities = serde_json::to_value(&ServerCapabilities {
         completion_provider: Some(CompletionOptions::default()),
@@ -104,12 +111,11 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
                 if request_is::<Completion>(&req) {
                     match cast::<Completion>(req) {
                         Ok((id, params)) => {
-                            eprintln!("******{:?}********", id);
                             let mut lcr = last_worker_request.lock();
                             let completion_request = CompletionRequest::new(id, params);
                             *lcr = Some(WorkerRequest::Completion(completion_request));
                         }
-                        Err(err) => eprintln!("{err:?}"),
+                        Err(err) => error!("{err:?}"),
                     }
                 } else if request_is::<Generate>(&req) {
                     match cast::<Generate>(req) {
@@ -118,7 +124,7 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
                             let completion_request = GenerateRequest::new(id, params);
                             *lcr = Some(WorkerRequest::Generate(completion_request));
                         }
-                        Err(err) => eprintln!("{err:?}"),
+                        Err(err) => error!("{err:?}"),
                     }
                 } else if request_is::<GenerateStream>(&req) {
                     match cast::<GenerateStream>(req) {
@@ -127,10 +133,10 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
                             let completion_request = GenerateStreamRequest::new(id, params);
                             *lcr = Some(WorkerRequest::GenerateStream(completion_request));
                         }
-                        Err(err) => eprintln!("{err:?}"),
+                        Err(err) => error!("{err:?}"),
                     }
                 } else {
-                    eprintln!("lsp-ai currently only supports textDocument/completion, textDocument/generate and textDocument/generateStream")
+                    error!("lsp-ai currently only supports textDocument/completion, textDocument/generate and textDocument/generateStream")
                 }
             }
             Message::Notification(not) => {
@@ -149,4 +155,70 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::memory_backends::Prompt;
+
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn custom_mac_gguf_model() {
+        let args = json!({
+            "initializationOptions": {
+                "memory": {
+                    "file_store": {}
+                },
+                "macos": {
+                    "model_gguf": {
+                        "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
+                        "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
+                        // "repository": "stabilityai/stablelm-2-zephyr-1_6b",
+                        // "name": "stablelm-2-zephyr-1_6b-Q5_K_M.gguf",
+                        "max_new_tokens": {
+                            "completion": 32,
+                            "generation": 256,
+                        },
+                        // "fim": {
+                        //     "start": "<fim_prefix>",
+                        //     "middle": "<fim_suffix>",
+                        //     "end": "<fim_middle>"
+                        // },
+                        // "chat": {
+                        //     "completion": [
+                        //         {
+                        //             "role": "system",
+                        //             "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. Keep your response brief. Do not produce any text besides code. \n\n{context}",
+                        //         },
+                        //         {
+                        //             "role": "user",
+                        //             "content": "Complete the following code: \n\n{code}"
+                        //         }
+                        //     ],
+                        //     "generation": [
+                        //         {
+                        //             "role": "system",
+                        //             "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{context}",
+                        //         },
+                        //         {
+                        //             "role": "user",
+                        //             "content": "Complete the following code: \n\n{code}"
+                        //         }
+                        //     ],
+                        //     // "chat_template": "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n<|EOT|>\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
+                        // },
+                        "n_ctx": 2048,
+                        "n_gpu_layers": 35,
+                    }
+                },
+            }
+        });
+        let configuration = Configuration::new(args).unwrap();
+        let backend: Box<dyn TransformerBackend + Send> = configuration.clone().try_into().unwrap();
+        let prompt = Prompt::new("".to_string(), "def fibn".to_string());
+        let response = backend.do_completion(&prompt).unwrap();
+        eprintln!("\nRESPONSE:\n{:?}", response.insert_text);
+    }
 }

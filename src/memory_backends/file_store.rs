@@ -2,10 +2,11 @@ use anyhow::Context;
 use lsp_types::TextDocumentPositionParams;
 use ropey::Rope;
 use std::collections::HashMap;
+use tracing::instrument;
 
 use crate::{configuration::Configuration, utils::characters_to_estimated_tokens};
 
-use super::{MemoryBackend, Prompt};
+use super::{MemoryBackend, Prompt, PromptForType};
 
 pub struct FileStore {
     configuration: Configuration,
@@ -22,6 +23,7 @@ impl FileStore {
 }
 
 impl MemoryBackend for FileStore {
+    #[instrument(skip(self))]
     fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
         let rope = self
             .file_map
@@ -34,7 +36,12 @@ impl MemoryBackend for FileStore {
             .to_string())
     }
 
-    fn build_prompt(&self, position: &TextDocumentPositionParams) -> anyhow::Result<Prompt> {
+    #[instrument(skip(self))]
+    fn build_prompt(
+        &self,
+        position: &TextDocumentPositionParams,
+        prompt_for_type: PromptForType,
+    ) -> anyhow::Result<Prompt> {
         let mut rope = self
             .file_map
             .get(position.text_document.uri.as_str())
@@ -44,33 +51,60 @@ impl MemoryBackend for FileStore {
         let cursor_index = rope.line_to_char(position.position.line as usize)
             + position.position.character as usize;
 
-        // We only want to do FIM if the user has enabled it, and the cursor is not at the end of the file
-        let code = match self.configuration.get_fim() {
-            Some(fim) if rope.len_chars() != cursor_index => {
-                let max_length =
-                    characters_to_estimated_tokens(self.configuration.get_maximum_context_length());
+        let is_chat_enabled = match prompt_for_type {
+            PromptForType::Completion => self
+                .configuration
+                .get_chat()?
+                .map(|c| c.completion.is_some())
+                .unwrap_or(false),
+            PromptForType::Generate => self
+                .configuration
+                .get_chat()?
+                .map(|c| c.generation.is_some())
+                .unwrap_or(false),
+        };
+
+        // We only want to do FIM if the user has enabled it, the cursor is not at the end of the file,
+        // and the user has not enabled chat
+        let code = match (is_chat_enabled, self.configuration.get_fim()?) {
+            r @ (true, _) | r @ (false, Some(_))
+                if is_chat_enabled || rope.len_chars() != cursor_index =>
+            {
+                let max_length = characters_to_estimated_tokens(
+                    self.configuration.get_maximum_context_length()?,
+                );
                 let start = cursor_index.checked_sub(max_length / 2).unwrap_or(0);
                 let end = rope
                     .len_chars()
                     .min(cursor_index + (max_length - (cursor_index - start)));
-                rope.insert(end, &fim.end);
-                rope.insert(cursor_index, &fim.middle);
-                rope.insert(start, &fim.start);
-                let rope_slice = rope
-                    .get_slice(
-                        start
-                            ..end
-                                + fim.start.chars().count()
-                                + fim.middle.chars().count()
-                                + fim.end.chars().count(),
-                    )
-                    .context("Error getting rope slice")?;
-                rope_slice.to_string()
+
+                if is_chat_enabled {
+                    rope.insert(cursor_index, "{CURSOR}");
+                    let rope_slice = rope
+                        .get_slice(start..end + "{CURSOR}".chars().count())
+                        .context("Error getting rope slice")?;
+                    rope_slice.to_string()
+                } else {
+                    let fim = r.1.unwrap(); // We can unwrap as we know it is some from the match
+                    rope.insert(end, &fim.end);
+                    rope.insert(cursor_index, &fim.middle);
+                    rope.insert(start, &fim.start);
+                    let rope_slice = rope
+                        .get_slice(
+                            start
+                                ..end
+                                    + fim.start.chars().count()
+                                    + fim.middle.chars().count()
+                                    + fim.end.chars().count(),
+                        )
+                        .context("Error getting rope slice")?;
+                    rope_slice.to_string()
+                }
             }
             _ => {
                 let start = cursor_index
                     .checked_sub(characters_to_estimated_tokens(
-                        self.configuration.get_maximum_context_length(),
+                        self.configuration.get_maximum_context_length()?,
                     ))
                     .unwrap_or(0);
                 let rope_slice = rope
@@ -82,6 +116,7 @@ impl MemoryBackend for FileStore {
         Ok(Prompt::new("".to_string(), code))
     }
 
+    #[instrument(skip(self))]
     fn opened_text_document(
         &mut self,
         params: lsp_types::DidOpenTextDocumentParams,
@@ -92,6 +127,7 @@ impl MemoryBackend for FileStore {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn changed_text_document(
         &mut self,
         params: lsp_types::DidChangeTextDocumentParams,
@@ -116,6 +152,7 @@ impl MemoryBackend for FileStore {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn renamed_file(&mut self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         for file_rename in params.files {
             if let Some(rope) = self.file_map.remove(&file_rename.old_uri) {

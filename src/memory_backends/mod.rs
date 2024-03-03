@@ -14,9 +14,15 @@ pub struct Prompt {
 }
 
 impl Prompt {
-    fn new(context: String, code: String) -> Self {
+    pub fn new(context: String, code: String) -> Self {
         Self { context, code }
     }
+}
+
+#[derive(Debug)]
+pub enum PromptForType {
+    Completion,
+    Generate,
 }
 
 pub trait MemoryBackend {
@@ -26,7 +32,11 @@ pub trait MemoryBackend {
     fn opened_text_document(&mut self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
     fn changed_text_document(&mut self, params: DidChangeTextDocumentParams) -> anyhow::Result<()>;
     fn renamed_file(&mut self, params: RenameFilesParams) -> anyhow::Result<()>;
-    fn build_prompt(&self, position: &TextDocumentPositionParams) -> anyhow::Result<Prompt>;
+    fn build_prompt(
+        &self,
+        position: &TextDocumentPositionParams,
+        prompt_for_type: PromptForType,
+    ) -> anyhow::Result<Prompt>;
     fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String>;
 }
 

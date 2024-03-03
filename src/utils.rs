@@ -9,7 +9,7 @@ pub trait ToResponseError {
 impl ToResponseError for anyhow::Error {
     fn to_response_error(&self, code: i32) -> ResponseError {
         ResponseError {
-            code: -32603,
+            code,
             message: self.to_string(),
             data: None,
         }
@@ -25,8 +25,8 @@ pub fn format_chat_messages(messages: &Vec<ChatMessage>, prompt: &Prompt) -> Vec
         .iter()
         .map(|m| ChatMessage {
             role: m.role.to_owned(),
-            message: m
-                .message
+            content: m
+                .content
                 .replace("{context}", &prompt.context)
                 .replace("{code}", &prompt.code),
         })

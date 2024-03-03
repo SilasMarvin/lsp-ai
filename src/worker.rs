@@ -5,14 +5,15 @@ use lsp_types::{
 };
 use parking_lot::Mutex;
 use std::{sync::Arc, thread};
+use tracing::instrument;
 
 use crate::custom_requests::generate::{GenerateParams, GenerateResult};
 use crate::custom_requests::generate_stream::GenerateStreamParams;
-use crate::memory_backends::MemoryBackend;
+use crate::memory_backends::{MemoryBackend, PromptForType};
 use crate::transformer_backends::TransformerBackend;
 use crate::utils::ToResponseError;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CompletionRequest {
     id: RequestId,
     params: CompletionParams,
@@ -24,7 +25,7 @@ impl CompletionRequest {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GenerateRequest {
     id: RequestId,
     params: GenerateParams,
@@ -38,7 +39,7 @@ impl GenerateRequest {
 
 // The generate stream is not yet ready but we don't want to remove it
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GenerateStreamRequest {
     id: RequestId,
     params: GenerateStreamParams,
@@ -91,21 +92,17 @@ impl Worker {
         }
     }
 
+    #[instrument(skip(self))]
     fn do_completion(&self, request: &CompletionRequest) -> anyhow::Result<Response> {
-        let prompt = self
-            .memory_backend
-            .lock()
-            .build_prompt(&request.params.text_document_position)?;
+        let prompt = self.memory_backend.lock().build_prompt(
+            &request.params.text_document_position,
+            PromptForType::Completion,
+        )?;
         let filter_text = self
             .memory_backend
             .lock()
             .get_filter_text(&request.params.text_document_position)?;
-        eprintln!("\nPROMPT**************\n{:?}\n******************\n", prompt);
         let response = self.transformer_backend.do_completion(&prompt)?;
-        eprintln!(
-            "\nINSERT TEXT&&&&&&&&&&&&&&&&&&&\n{:?}\n&&&&&&&&&&&&&&&&&&\n",
-            response.insert_text
-        );
         let completion_text_edit = TextEdit::new(
             Range::new(
                 Position::new(
@@ -139,12 +136,12 @@ impl Worker {
         })
     }
 
+    #[instrument(skip(self))]
     fn do_generate(&self, request: &GenerateRequest) -> anyhow::Result<Response> {
-        let prompt = self
-            .memory_backend
-            .lock()
-            .build_prompt(&request.params.text_document_position)?;
-        eprintln!("\nPROMPT*************\n{:?}\n************\n", prompt);
+        let prompt = self.memory_backend.lock().build_prompt(
+            &request.params.text_document_position,
+            PromptForType::Generate,
+        )?;
         let response = self.transformer_backend.do_generate(&prompt)?;
         let result = GenerateResult {
             generated_text: response.generated_text,
