@@ -48,6 +48,7 @@ fn main() -> Result<()> {
     FmtSubscriber::builder()
         .with_writer(std::io::stderr)
         .with_env_filter(EnvFilter::from_env("LSP_AI_LOG"))
+        .with_max_level(tracing::Level::TRACE)
         .init();
 
     let (connection, io_threads) = Connection::stdio();
@@ -159,13 +160,28 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::memory_backends::Prompt;
-
     use super::*;
+    use crate::memory_backends::Prompt;
     use serde_json::json;
 
+    //////////////////////////////////////
+    //////////////////////////////////////
+    /// Some basic gguf model tests //////
+    //////////////////////////////////////
+    //////////////////////////////////////
+
     #[test]
-    fn custom_mac_gguf_model() {
+    fn completion_with_default_arguments() {
+        let args = json!({});
+        let configuration = Configuration::new(args).unwrap();
+        let backend: Box<dyn TransformerBackend + Send> = configuration.clone().try_into().unwrap();
+        let prompt = Prompt::new("".to_string(), "def fibn".to_string());
+        let response = backend.do_completion(&prompt).unwrap();
+        assert!(!response.insert_text.is_empty())
+    }
+
+    #[test]
+    fn completion_with_custom_gguf_model() {
         let args = json!({
             "initializationOptions": {
                 "memory": {
@@ -175,8 +191,6 @@ mod tests {
                     "model_gguf": {
                         "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
                         "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
-                        // "repository": "stabilityai/stablelm-2-zephyr-1_6b",
-                        // "name": "stablelm-2-zephyr-1_6b-Q5_K_M.gguf",
                         "max_new_tokens": {
                             "completion": 32,
                             "generation": 256,
@@ -219,6 +233,6 @@ mod tests {
         let backend: Box<dyn TransformerBackend + Send> = configuration.clone().try_into().unwrap();
         let prompt = Prompt::new("".to_string(), "def fibn".to_string());
         let response = backend.do_completion(&prompt).unwrap();
-        eprintln!("\nRESPONSE:\n{:?}", response.insert_text);
+        assert!(!response.insert_text.is_empty());
     }
 }

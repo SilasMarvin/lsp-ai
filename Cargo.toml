@@ -27,3 +27,6 @@ tracing = "0.1.40"
 
 [features]
 default = []
+
+[dev-dependencies]
+assert_cmd = "2.0.14"
