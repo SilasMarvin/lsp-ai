@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.8",
     "typescript": "^5.3.3"
   },
   "dependencies": {

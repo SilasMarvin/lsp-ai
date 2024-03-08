@@ -1,11 +1,12 @@
 use anyhow::Context;
-use hf_hub::api::sync::Api;
+use hf_hub::api::sync::ApiBuilder;
 use tracing::{debug, instrument};
 
 use super::TransformerBackend;
 use crate::{
     configuration::Configuration,
     memory_backends::Prompt,
+    template::apply_chat_template,
     utils::format_chat_messages,
     worker::{
         DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
@@ -23,7 +24,7 @@ pub struct LlamaCPP {
 impl LlamaCPP {
     #[instrument]
     pub fn new(configuration: Configuration) -> anyhow::Result<Self> {
-        let api = Api::new()?;
+        let api = ApiBuilder::new().with_progress(true).build()?;
         let model = configuration.get_model()?;
         let name = model
             .name
@@ -45,8 +46,13 @@ impl LlamaCPP {
             Some(c) => {
                 if let Some(completion_messages) = &c.completion {
                     let chat_messages = format_chat_messages(completion_messages, prompt);
-                    self.model
-                        .apply_chat_template(chat_messages, c.chat_template.to_owned())?
+                    if let Some(chat_template) = &c.chat_template {
+                        let bos_token = self.model.get_bos_token()?;
+                        let eos_token = self.model.get_eos_token()?;
+                        apply_chat_template(&chat_template, chat_messages, &bos_token, &eos_token)?
+                    } else {
+                        self.model.apply_chat_template(chat_messages, None)?
+                    }
                 } else {
                     prompt.code.to_owned()
                 }
@@ -59,8 +65,9 @@ impl LlamaCPP {
 impl TransformerBackend for LlamaCPP {
     #[instrument(skip(self))]
     fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse> {
-        let prompt = self.get_prompt_string(prompt)?;
-        // debug!("Prompt string for LLM: {}", prompt);
+        // let prompt = self.get_prompt_string(prompt)?;
+        let prompt = &prompt.code;
+        debug!("Prompt string for LLM: {}", prompt);
         let max_new_tokens = self.configuration.get_max_new_tokens()?.completion;
         self.model
             .complete(&prompt, max_new_tokens)
@@ -69,8 +76,9 @@ impl TransformerBackend for LlamaCPP {
 
     #[instrument(skip(self))]
     fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
-        let prompt = self.get_prompt_string(prompt)?;
+        // let prompt = self.get_prompt_string(prompt)?;
         // debug!("Prompt string for LLM: {}", prompt);
+        let prompt = &prompt.code;
         let max_new_tokens = self.configuration.get_max_new_tokens()?.completion;
         self.model
             .complete(&prompt, max_new_tokens)

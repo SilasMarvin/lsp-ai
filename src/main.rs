@@ -13,6 +13,7 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 mod configuration;
 mod custom_requests;
 mod memory_backends;
+mod template;
 mod transformer_backends;
 mod utils;
 mod worker;
@@ -25,7 +26,6 @@ use worker::{CompletionRequest, GenerateRequest, Worker, WorkerRequest};
 
 use crate::{custom_requests::generate_stream::GenerateStream, worker::GenerateStreamRequest};
 
-// Taken directly from: https://github.com/rust-lang/rust-analyzer
 fn notification_is<N: lsp_types::notification::Notification>(notification: &Notification) -> bool {
     notification.method == N::METHOD
 }
@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     FmtSubscriber::builder()
         .with_writer(std::io::stderr)
         .with_env_filter(EnvFilter::from_env("LSP_AI_LOG"))
-        .with_max_level(tracing::Level::TRACE)
+        // .with_max_level(tracing::Level::TRACE)
         .init();
 
     let (connection, io_threads) = Connection::stdio();

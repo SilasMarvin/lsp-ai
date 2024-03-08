@@ -21,9 +21,10 @@ once_cell = "1.19.0"
 directories = "5.0.1"
 # llama-cpp-2 = "0.1.31"
 llama-cpp-2 = { path = "../llama-cpp-rs/llama-cpp-2" }
-minijinja = "1.0.12"
+minijinja = { version = "1.0.12", features = ["loader"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = "0.1.40"
+xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 
 [features]
 default = []

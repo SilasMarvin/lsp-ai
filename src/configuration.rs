@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ pub enum ValidTransformerBackend {
     PostgresML,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
@@ -239,5 +239,61 @@ impl Configuration {
         } else {
             anyhow::bail!("We currently only support gguf models using llama cpp")
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn macos_model_gguf() {
+        let args = json!({
+                "memory": {
+                    "file_store": {}
+                },
+                "macos": {
+                    "model_gguf": {
+                        "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
+                        "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
+                        "max_new_tokens": {
+                            "completion": 32,
+                            "generation": 256,
+                        },
+                        "fim": {
+                            "start": "<fim_prefix>",
+                            "middle": "<fim_suffix>",
+                            "end": "<fim_middle>"
+                        },
+                        "chat": {
+                            "completion": [
+                                {
+                                    "role": "system",
+                                    "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. Keep your response brief. Do not produce any text besides code. \n\n{context}",
+                                },
+                                {
+                                    "role": "user",
+                                    "content": "Complete the following code: \n\n{code}"
+                                }
+                            ],
+                            "generation": [
+                                {
+                                    "role": "system",
+                                    "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{context}",
+                                },
+                                {
+                                    "role": "user",
+                                    "content": "Complete the following code: \n\n{code}"
+                                }
+                            ],
+                            "chat_template": "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n<|EOT|>\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
+                        },
+                        "n_ctx": 2048,
+                        "n_gpu_layers": 35,
+                    }
+                },
+        });
+        Configuration::new(args).unwrap();
     }
 }

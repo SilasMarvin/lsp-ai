@@ -64,7 +64,9 @@ impl Model {
     #[instrument(skip(self))]
     pub fn complete(&self, prompt: &str, max_new_tokens: usize) -> anyhow::Result<String> {
         // initialize the context
-        let ctx_params = LlamaContextParams::default().with_n_ctx(Some(self.n_ctx.clone()));
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(Some(self.n_ctx.clone()))
+            .with_n_batch(self.n_ctx.get());
 
         let mut ctx = self
             .model
@@ -156,5 +158,17 @@ impl Model {
         Ok(self
             .model
             .apply_chat_template(template, llama_chat_messages, true)?)
+    }
+
+    #[instrument(skip(self))]
+    pub fn get_eos_token(&self) -> anyhow::Result<String> {
+        let token = self.model.token_eos();
+        Ok(self.model.token_to_str(token)?)
+    }
+
+    #[instrument(skip(self))]
+    pub fn get_bos_token(&self) -> anyhow::Result<String> {
+        let token = self.model.token_bos();
+        Ok(self.model.token_to_str(token)?)
     }
 }
