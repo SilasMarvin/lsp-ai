@@ -6,7 +6,8 @@ use crate::{
     },
 };
 
-pub mod llama_cpp;
+mod llama_cpp;
+mod openai;
 
 pub trait TransformerBackend {
     // Should all take an enum of chat messages or just a string for completion
@@ -22,11 +23,13 @@ impl TryFrom<Configuration> for Box<dyn TransformerBackend + Send> {
     type Error = anyhow::Error;
 
     fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {
-        match configuration.get_transformer_backend()? {
-            ValidTransformerBackend::LlamaCPP => {
-                Ok(Box::new(llama_cpp::LlamaCPP::new(configuration)?))
+        match configuration.into_transformer_backend()? {
+            ValidTransformerBackend::LlamaCPP(model_gguf) => {
+                Ok(Box::new(llama_cpp::LlamaCPP::new(model_gguf)?))
             }
-            _ => unimplemented!(),
+            ValidTransformerBackend::OpenAI(openai_config) => {
+                Ok(Box::new(openai::OpenAI::new(openai_config)))
+            }
         }
     }
 }

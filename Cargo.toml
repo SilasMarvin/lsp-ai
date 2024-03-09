@@ -25,6 +25,7 @@ minijinja = { version = "1.0.12", features = ["loader"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = "0.1.40"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
+reqwest = { version = "0.11.25", features = ["blocking", "json"] }
 
 [features]
 default = []
