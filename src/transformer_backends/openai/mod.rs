@@ -32,6 +32,7 @@ impl OpenAI {
     }
 
     fn get_completion(&self, prompt: &str, max_tokens: usize) -> anyhow::Result<String> {
+        eprintln!("SENDING REQUEST WITH PROMPT: ******\n{}\n******", prompt);
         let client = reqwest::blocking::Client::new();
         let token = if let Some(env_var_name) = &self.configuration.auth_token_env_var_name {
             std::env::var(env_var_name)?
@@ -66,15 +67,18 @@ impl OpenAI {
 impl TransformerBackend for OpenAI {
     #[instrument(skip(self))]
     fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse> {
-        let insert_text =
-            self.get_completion(&prompt.code, self.configuration.max_tokens.completion)?;
+        eprintln!("--------------{:?}---------------", prompt);
+        let prompt = format!("{} \n\n {}", prompt.context, prompt.code);
+        let insert_text = self.get_completion(&prompt, self.configuration.max_tokens.completion)?;
         Ok(DoCompletionResponse { insert_text })
     }
 
     #[instrument(skip(self))]
     fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
+        eprintln!("--------------{:?}---------------", prompt);
+        let prompt = format!("{} \n\n {}", prompt.context, prompt.code);
         let generated_text =
-            self.get_completion(&prompt.code, self.configuration.max_tokens.completion)?;
+            self.get_completion(&prompt, self.configuration.max_tokens.completion)?;
         Ok(DoGenerateResponse { generated_text })
     }
 

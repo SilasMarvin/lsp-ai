@@ -6,6 +6,7 @@ use lsp_types::{
 use crate::configuration::{Configuration, ValidMemoryBackend};
 
 pub mod file_store;
+mod postgresml;
 
 #[derive(Debug)]
 pub struct Prompt {
@@ -33,7 +34,7 @@ pub trait MemoryBackend {
     fn changed_text_document(&mut self, params: DidChangeTextDocumentParams) -> anyhow::Result<()>;
     fn renamed_file(&mut self, params: RenameFilesParams) -> anyhow::Result<()>;
     fn build_prompt(
-        &self,
+        &mut self,
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt>;
@@ -48,7 +49,9 @@ impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send> {
             ValidMemoryBackend::FileStore => {
                 Ok(Box::new(file_store::FileStore::new(configuration)))
             }
-            _ => unimplemented!(),
+            ValidMemoryBackend::PostgresML(postgresml_config) => Ok(Box::new(
+                postgresml::PostgresML::new(postgresml_config, configuration)?,
+            )),
         }
     }
 }

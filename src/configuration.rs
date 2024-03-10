@@ -13,7 +13,7 @@ pub type Kwargs = HashMap<String, Value>;
 
 pub enum ValidMemoryBackend {
     FileStore,
-    PostgresML,
+    PostgresML(PostgresML),
 }
 
 pub enum ValidTransformerBackend {
@@ -58,14 +58,21 @@ impl Default for MaxTokens {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct PostgresML {
+    pub database_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 struct ValidMemoryConfiguration {
     file_store: Option<Value>,
+    postgresml: Option<PostgresML>,
 }
 
 impl Default for ValidMemoryConfiguration {
     fn default() -> Self {
         Self {
             file_store: Some(json!({})),
+            postgresml: None,
         }
     }
 }
@@ -188,13 +195,22 @@ struct ValidConfiguration {
     transformer: ValidTransformerConfiguration,
 }
 
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct ValidClientParams {
+    #[serde(alias = "rootURI")]
+    root_uri: Option<String>,
+    workspace_folders: Option<Vec<String>>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Configuration {
     valid_config: ValidConfiguration,
+    client_params: ValidClientParams,
 }
 
 impl Configuration {
     pub fn new(mut args: Value) -> Result<Self> {
+        eprintln!("\n\n{}\n\n", args.to_string());
         let configuration_args = args
             .as_object_mut()
             .context("Server configuration must be a JSON object")?
@@ -203,14 +219,18 @@ impl Configuration {
             Some(configuration_args) => serde_json::from_value(configuration_args)?,
             None => ValidConfiguration::default(),
         };
+        let client_params: ValidClientParams = serde_json::from_value(args)?;
         Ok(Self {
             valid_config: valid_args,
+            client_params,
         })
     }
 
     pub fn get_memory_backend(&self) -> Result<ValidMemoryBackend> {
         if self.valid_config.memory.file_store.is_some() {
             Ok(ValidMemoryBackend::FileStore)
+        } else if let Some(postgresml) = &self.valid_config.memory.postgresml {
+            Ok(ValidMemoryBackend::PostgresML(postgresml.to_owned()))
         } else {
             anyhow::bail!("Invalid memory configuration")
         }
@@ -230,7 +250,7 @@ impl Configuration {
     // Helpers for the Memory Backend /////
     ///////////////////////////////////////
 
-    pub fn get_maximum_context_length(&self) -> Result<usize> {
+    pub fn get_max_context_length(&self) -> Result<usize> {
         if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
             Ok(model_gguf
                 .kwargs

@@ -16,8 +16,8 @@ impl ToResponseError for anyhow::Error {
     }
 }
 
-pub fn characters_to_estimated_tokens(characters: usize) -> usize {
-    characters * 4
+pub fn tokens_to_estimated_characters(tokens: usize) -> usize {
+    tokens * 4
 }
 
 pub fn format_chat_messages(messages: &Vec<ChatMessage>, prompt: &Prompt) -> Vec<ChatMessage> {

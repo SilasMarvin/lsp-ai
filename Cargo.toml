@@ -26,6 +26,9 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = "0.1.40"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 reqwest = { version = "0.11.25", features = ["blocking", "json"] }
+ignore = "0.4.22"
+pgml = { path = "submodules/postgresml/pgml-sdks/pgml" }
+tokio = { version = "1.36.0", features = ["rt-multi-thread"] }
 
 [features]
 default = []

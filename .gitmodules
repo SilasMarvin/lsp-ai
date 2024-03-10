@@ -1,0 +1,3 @@
+[submodule "submodules/postgresml"]
+	path = submodules/postgresml
+	url = https://github.com/postgresml/postgresml
