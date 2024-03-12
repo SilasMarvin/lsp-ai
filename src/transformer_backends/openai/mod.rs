@@ -60,6 +60,7 @@ impl OpenAI {
             }))
             .send()?
             .json()?;
+        eprintln!("**********RECEIVED REQUEST********");
         Ok(res.choices[0].text.clone())
     }
 }

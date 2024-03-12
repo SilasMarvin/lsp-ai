@@ -13,6 +13,10 @@ pub struct FileStore {
     file_map: HashMap<String, Rope>,
 }
 
+// TODO: Put some thought into the crawling here. Do we want to have a crawl option where it tries to crawl through all relevant
+// files and then when asked for context it loads them in by the most recently accessed? That seems kind of silly honestly, but I could see
+// how users who want to use models with massive context lengths would just want their entire project as context for generation tasks
+// I'm not sure yet, this is something I need to think through more
 impl FileStore {
     pub fn new(configuration: Configuration) -> Self {
         Self {

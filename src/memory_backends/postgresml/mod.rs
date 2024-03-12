@@ -1,10 +1,13 @@
-use std::path::Path;
+use std::{
+    sync::mpsc::{self, Sender, TryRecvError},
+    time::Duration,
+};
 
 use anyhow::Context;
 use lsp_types::TextDocumentPositionParams;
 use pgml::{Collection, Pipeline};
 use serde_json::json;
-use tokio::runtime::Runtime;
+use tokio::{runtime::Runtime, time};
 use tracing::instrument;
 
 use crate::{
@@ -20,6 +23,7 @@ pub struct PostgresML {
     collection: Collection,
     pipeline: Pipeline,
     runtime: Runtime,
+    debounce_tx: Sender<String>,
 }
 
 impl PostgresML {
@@ -71,6 +75,46 @@ impl PostgresML {
                 .await
                 .expect("PGML - Error adding pipeline to collection");
         });
+        // Setup up a debouncer for changed text documents
+        let mut task_collection = collection.clone();
+        let (debounce_tx, debounce_rx) = mpsc::channel::<String>();
+        runtime.spawn(async move {
+            let duration = Duration::from_millis(500);
+            let mut file_paths = Vec::new();
+            loop {
+                time::sleep(duration).await;
+                let new_paths: Vec<String> = debounce_rx.try_iter().collect();
+                if !new_paths.is_empty() {
+                    for path in new_paths {
+                        if !file_paths.iter().any(|p| *p == path) {
+                            file_paths.push(path);
+                        }
+                    }
+                } else {
+                    if file_paths.is_empty() {
+                        continue;
+                    }
+                    let documents = file_paths
+                        .into_iter()
+                        .map(|path| {
+                            let text = std::fs::read_to_string(&path)
+                                .expect(format!("Error reading path: {}", path).as_str());
+                            json!({
+                                "id": path,
+                                "text": text
+                            })
+                            .into()
+                        })
+                        .collect();
+                    task_collection
+                        .upsert_documents(documents, None)
+                        .await
+                        .expect("PGML - Error adding pipeline to collection");
+                    file_paths = Vec::new();
+                }
+            }
+        });
+        // TODO: Maybe
         // Need to crawl the root path and or workspace folders
         // Or set some kind of did crawl for it
         Ok(Self {
@@ -79,6 +123,7 @@ impl PostgresML {
             collection,
             pipeline,
             runtime,
+            debounce_tx,
         })
     }
 }
@@ -167,22 +212,7 @@ impl MemoryBackend for PostgresML {
         params: lsp_types::DidChangeTextDocumentParams,
     ) -> anyhow::Result<()> {
         let path = params.text_document.uri.path().to_owned();
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("Error reading path: {}", path))?;
-        let mut task_collection = self.collection.clone();
-        self.runtime.spawn(async move {
-            task_collection
-                .upsert_documents(
-                    vec![json!({
-                        "id": path,
-                        "text": text
-                    })
-                    .into()],
-                    None,
-                )
-                .await
-                .expect("PGML - Error adding pipeline to collection");
-        });
+        self.debounce_tx.send(path)?;
         self.file_store.changed_text_document(params)
     }
 
