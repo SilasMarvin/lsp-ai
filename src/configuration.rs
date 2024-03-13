@@ -12,7 +12,7 @@ const DEFAULT_MAX_GENERATION_TOKENS: usize = 256;
 pub type Kwargs = HashMap<String, Value>;
 
 pub enum ValidMemoryBackend {
-    FileStore,
+    FileStore(FileStore),
     PostgresML(PostgresML),
 }
 
@@ -60,18 +60,24 @@ impl Default for MaxTokens {
 #[derive(Clone, Debug, Deserialize)]
 pub struct PostgresML {
     pub database_url: Option<String>,
+    pub crawl: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct FileStore {
+    pub crawl: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct ValidMemoryConfiguration {
-    file_store: Option<Value>,
+    file_store: Option<FileStore>,
     postgresml: Option<PostgresML>,
 }
 
 impl Default for ValidMemoryConfiguration {
     fn default() -> Self {
         Self {
-            file_store: Some(json!({})),
+            file_store: Some(FileStore::default()),
             postgresml: None,
         }
     }
@@ -227,8 +233,9 @@ impl Configuration {
     }
 
     pub fn get_memory_backend(&self) -> Result<ValidMemoryBackend> {
-        if self.valid_config.memory.file_store.is_some() {
-            Ok(ValidMemoryBackend::FileStore)
+        // if self.valid_config.memory.file_store.is_some() {
+        if let Some(file_store) = &self.valid_config.memory.file_store {
+            Ok(ValidMemoryBackend::FileStore(file_store.to_owned()))
         } else if let Some(postgresml) = &self.valid_config.memory.postgresml {
             Ok(ValidMemoryBackend::PostgresML(postgresml.to_owned()))
         } else {

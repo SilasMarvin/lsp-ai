@@ -1,28 +1,90 @@
 use anyhow::Context;
+use indexmap::IndexSet;
 use lsp_types::TextDocumentPositionParams;
 use ropey::Rope;
 use std::collections::HashMap;
 use tracing::instrument;
 
-use crate::{configuration::Configuration, utils::tokens_to_estimated_characters};
+use crate::{
+    configuration::{self, Configuration},
+    utils::tokens_to_estimated_characters,
+};
 
 use super::{MemoryBackend, Prompt, PromptForType};
 
 pub struct FileStore {
+    crawl: bool,
     configuration: Configuration,
     file_map: HashMap<String, Rope>,
+    accessed_files: IndexSet<String>,
 }
 
 // TODO: Put some thought into the crawling here. Do we want to have a crawl option where it tries to crawl through all relevant
 // files and then when asked for context it loads them in by the most recently accessed? That seems kind of silly honestly, but I could see
 // how users who want to use models with massive context lengths would just want their entire project as context for generation tasks
 // I'm not sure yet, this is something I need to think through more
+
+// Ok here are some more ideas
+// We take a crawl arg which is a bool of true or false for file_store
+// If true we crawl until we get to the max_context_length and then we stop crawling
+// We keep track of the last opened / changed files, and prioritize those when building the context for our llms
+
+// For memory backends like PostgresML, they will need to take some kind of max_context_length to crawl or something.
+// In other words, there needs to be some specification for how much they should be crawling because the limiting happens in the vector_recall
 impl FileStore {
-    pub fn new(configuration: Configuration) -> Self {
+    pub fn new(file_store_config: configuration::FileStore, configuration: Configuration) -> Self {
+        // TODO: maybe crawl
         Self {
+            crawl: file_store_config.crawl,
             configuration,
             file_map: HashMap::new(),
+            accessed_files: IndexSet::new(),
         }
+    }
+
+    pub fn new_without_crawl(configuration: Configuration) -> Self {
+        Self {
+            crawl: false,
+            configuration,
+            file_map: HashMap::new(),
+            accessed_files: IndexSet::new(),
+        }
+    }
+
+    fn get_rope_for_position(
+        &self,
+        position: &TextDocumentPositionParams,
+        characters: usize,
+    ) -> anyhow::Result<(Rope, usize)> {
+        // Get the rope and set our initial cursor index
+        let current_document_uri = position.text_document.uri.to_string();
+        let mut rope = self
+            .file_map
+            .get(&current_document_uri)
+            .context("Error file not found")?
+            .clone();
+        let mut cursor_index = rope.line_to_char(position.position.line as usize)
+            + position.position.character as usize;
+        // Add to our rope if we need to
+        for file in self
+            .accessed_files
+            .iter()
+            .filter(|f| **f != current_document_uri)
+        {
+            let needed = characters.checked_sub(rope.len_chars()).unwrap_or(0);
+            if needed == 0 {
+                break;
+            }
+            let r = self.file_map.get(file).context("Error file not found")?;
+            let slice_max = needed.min(r.len_chars());
+            let rope_str_slice = r
+                .get_slice(0..slice_max)
+                .context("Error getting slice")?
+                .to_string();
+            rope.insert(0, &rope_str_slice);
+            cursor_index += slice_max;
+        }
+        Ok((rope, cursor_index))
     }
 
     pub fn get_characters_around_position(
@@ -53,14 +115,7 @@ impl FileStore {
         prompt_for_type: PromptForType,
         max_context_length: usize,
     ) -> anyhow::Result<String> {
-        let mut rope = self
-            .file_map
-            .get(position.text_document.uri.as_str())
-            .context("Error file not found")?
-            .clone();
-
-        let cursor_index = rope.line_to_char(position.position.line as usize)
-            + position.position.character as usize;
+        let (mut rope, cursor_index) = self.get_rope_for_position(position, max_context_length)?;
 
         let is_chat_enabled = match prompt_for_type {
             PromptForType::Completion => self
@@ -157,8 +212,9 @@ impl MemoryBackend for FileStore {
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
         let rope = Rope::from_str(&params.text_document.text);
-        self.file_map
-            .insert(params.text_document.uri.to_string(), rope);
+        let uri = params.text_document.uri.to_string();
+        self.file_map.insert(uri.clone(), rope);
+        self.accessed_files.shift_insert(0, uri);
         Ok(())
     }
 
@@ -167,9 +223,10 @@ impl MemoryBackend for FileStore {
         &mut self,
         params: lsp_types::DidChangeTextDocumentParams,
     ) -> anyhow::Result<()> {
+        let uri = params.text_document.uri.to_string();
         let rope = self
             .file_map
-            .get_mut(params.text_document.uri.as_str())
+            .get_mut(&uri)
             .context("Error trying to get file that does not exist")?;
         for change in params.content_changes {
             // If range is ommitted, text is the new text of the document
@@ -184,6 +241,7 @@ impl MemoryBackend for FileStore {
                 *rope = Rope::from_str(&change.text);
             }
         }
+        self.accessed_files.shift_insert(0, uri);
         Ok(())
     }
 

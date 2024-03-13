@@ -46,9 +46,9 @@ impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send> {
 
     fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {
         match configuration.get_memory_backend()? {
-            ValidMemoryBackend::FileStore => {
-                Ok(Box::new(file_store::FileStore::new(configuration)))
-            }
+            ValidMemoryBackend::FileStore(file_store_config) => Ok(Box::new(
+                file_store::FileStore::new(file_store_config, configuration),
+            )),
             ValidMemoryBackend::PostgresML(postgresml_config) => Ok(Box::new(
                 postgresml::PostgresML::new(postgresml_config, configuration)?,
             )),

@@ -1468,6 +1468,7 @@ dependencies = [
  "directories",
  "hf-hub",
  "ignore",
+ "indexmap",
  "llama-cpp-2",
  "lsp-server",
  "lsp-types",

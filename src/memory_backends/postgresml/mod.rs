@@ -1,5 +1,5 @@
 use std::{
-    sync::mpsc::{self, Sender, TryRecvError},
+    sync::mpsc::{self, Sender},
     time::Duration,
 };
 
@@ -24,6 +24,7 @@ pub struct PostgresML {
     pipeline: Pipeline,
     runtime: Runtime,
     debounce_tx: Sender<String>,
+    added_pipeline: bool,
 }
 
 impl PostgresML {
@@ -31,7 +32,7 @@ impl PostgresML {
         postgresml_config: configuration::PostgresML,
         configuration: Configuration,
     ) -> anyhow::Result<Self> {
-        let file_store = FileStore::new(configuration.clone());
+        let file_store = FileStore::new_without_crawl(configuration.clone());
         let database_url = if let Some(database_url) = postgresml_config.database_url {
             database_url
         } else {
@@ -39,7 +40,7 @@ impl PostgresML {
         };
         // TODO: Think on the naming of the collection
         // Maybe filter on metadata or I'm not sure
-        let collection = Collection::new("test-lsp-ai", Some(database_url))?;
+        let collection = Collection::new("test-lsp-ai-2", Some(database_url))?;
         // TODO: Review the pipeline
         let pipeline = Pipeline::new(
             "v1",
@@ -66,15 +67,6 @@ impl PostgresML {
             .worker_threads(2)
             .enable_all()
             .build()?;
-        // Add the collection to the pipeline
-        let mut task_collection = collection.clone();
-        let mut task_pipeline = pipeline.clone();
-        runtime.spawn(async move {
-            task_collection
-                .add_pipeline(&mut task_pipeline)
-                .await
-                .expect("PGML - Error adding pipeline to collection");
-        });
         // Setup up a debouncer for changed text documents
         let mut task_collection = collection.clone();
         let (debounce_tx, debounce_rx) = mpsc::channel::<String>();
@@ -124,6 +116,7 @@ impl PostgresML {
             pipeline,
             runtime,
             debounce_tx,
+            added_pipeline: false,
         })
     }
 }
@@ -140,7 +133,7 @@ impl MemoryBackend for PostgresML {
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt> {
-        // This is blocking, but this is ok as we only query for it from the worker when we are actually doing a transform
+        // This is blocking, but that is ok as we only query for it from the worker when we are actually doing a transform
         let query = self
             .file_store
             .get_characters_around_position(position, 512)?;
@@ -189,8 +182,16 @@ impl MemoryBackend for PostgresML {
     ) -> anyhow::Result<()> {
         let text = params.text_document.text.clone();
         let path = params.text_document.uri.path().to_owned();
+        let task_added_pipeline = self.added_pipeline;
         let mut task_collection = self.collection.clone();
+        let mut task_pipeline = self.pipeline.clone();
         self.runtime.spawn(async move {
+            if !task_added_pipeline {
+                task_collection
+                    .add_pipeline(&mut task_pipeline)
+                    .await
+                    .expect("PGML - Error adding pipeline to collection");
+            }
             task_collection
                 .upsert_documents(
                     vec![json!({
@@ -201,7 +202,7 @@ impl MemoryBackend for PostgresML {
                     None,
                 )
                 .await
-                .expect("PGML - Error adding pipeline to collection");
+                .expect("PGML - Error upserting documents");
         });
         self.file_store.opened_text_document(params)
     }
