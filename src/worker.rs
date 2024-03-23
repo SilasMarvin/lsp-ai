@@ -71,7 +71,7 @@ pub struct DoGenerateStreamResponse {
 }
 
 pub struct Worker {
-    transformer_backend: Box<dyn TransformerBackend>,
+    transformer_backend: Box<dyn TransformerBackend + Send>,
     memory_backend: Arc<Mutex<Box<dyn MemoryBackend + Send>>>,
     last_worker_request: Arc<Mutex<Option<WorkerRequest>>>,
     connection: Arc<Connection>,
@@ -79,7 +79,7 @@ pub struct Worker {
 
 impl Worker {
     pub fn new(
-        transformer_backend: Box<dyn TransformerBackend>,
+        transformer_backend: Box<dyn TransformerBackend + Send>,
         memory_backend: Arc<Mutex<Box<dyn MemoryBackend + Send>>>,
         last_worker_request: Arc<Mutex<Option<WorkerRequest>>>,
         connection: Arc<Connection>,
@@ -92,8 +92,7 @@ impl Worker {
         }
     }
 
-    #[instrument(skip(self))]
-    fn do_completion(&self, request: &CompletionRequest) -> anyhow::Result<Response> {
+    async fn do_completion(&self, request: &CompletionRequest) -> anyhow::Result<Response> {
         let prompt = self.memory_backend.lock().build_prompt(
             &request.params.text_document_position,
             PromptForType::Completion,
@@ -102,7 +101,7 @@ impl Worker {
             .memory_backend
             .lock()
             .get_filter_text(&request.params.text_document_position)?;
-        let response = self.transformer_backend.do_completion(&prompt)?;
+        let response = self.transformer_backend.do_completion(&prompt).await?;
         let completion_text_edit = TextEdit::new(
             Range::new(
                 Position::new(
@@ -128,7 +127,7 @@ impl Worker {
             items: vec![item],
         };
         let result = Some(CompletionResponse::List(completion_list));
-        let result = serde_json::to_value(&result).unwrap();
+        let result = serde_json::to_value(result).unwrap();
         Ok(Response {
             id: request.id.clone(),
             result: Some(result),
@@ -137,16 +136,16 @@ impl Worker {
     }
 
     #[instrument(skip(self))]
-    fn do_generate(&self, request: &GenerateRequest) -> anyhow::Result<Response> {
+    async fn do_generate(&self, request: &GenerateRequest) -> anyhow::Result<Response> {
         let prompt = self.memory_backend.lock().build_prompt(
             &request.params.text_document_position,
             PromptForType::Generate,
         )?;
-        let response = self.transformer_backend.do_generate(&prompt)?;
+        let response = self.transformer_backend.do_generate(&prompt).await?;
         let result = GenerateResult {
             generated_text: response.generated_text,
         };
-        let result = serde_json::to_value(&result).unwrap();
+        let result = serde_json::to_value(result).unwrap();
         Ok(Response {
             id: request.id.clone(),
             result: Some(result),
@@ -154,36 +153,48 @@ impl Worker {
         })
     }
 
-    pub fn run(self) {
+    pub fn run(self) -> anyhow::Result<()> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()?;
         loop {
             let option_worker_request: Option<WorkerRequest> = {
                 let mut completion_request = self.last_worker_request.lock();
                 std::mem::take(&mut *completion_request)
             };
             if let Some(request) = option_worker_request {
-                let response = match request {
-                    WorkerRequest::Completion(request) => match self.do_completion(&request) {
-                        Ok(r) => r,
-                        Err(e) => Response {
-                            id: request.id,
-                            result: None,
-                            error: Some(e.to_response_error(-32603)),
-                        },
-                    },
-                    WorkerRequest::Generate(request) => match self.do_generate(&request) {
-                        Ok(r) => r,
-                        Err(e) => Response {
-                            id: request.id,
-                            result: None,
-                            error: Some(e.to_response_error(-32603)),
-                        },
-                    },
-                    WorkerRequest::GenerateStream(_) => panic!("Streaming is not supported yet"),
-                };
-                self.connection
-                    .sender
-                    .send(Message::Response(response))
-                    .expect("Error sending  message");
+                runtime.spawn(async move {
+                    let response = match request {
+                        WorkerRequest::Completion(request) => {
+                            match self.do_completion(&request).await {
+                                Ok(r) => r,
+                                Err(e) => Response {
+                                    id: request.id,
+                                    result: None,
+                                    error: Some(e.to_response_error(-32603)),
+                                },
+                            }
+                        }
+                        WorkerRequest::Generate(request) => {
+                            match self.do_generate(&request).await {
+                                Ok(r) => r,
+                                Err(e) => Response {
+                                    id: request.id,
+                                    result: None,
+                                    error: Some(e.to_response_error(-32603)),
+                                },
+                            }
+                        }
+                        WorkerRequest::GenerateStream(_) => {
+                            panic!("Streaming is not supported yet")
+                        }
+                    };
+                    self.connection
+                        .sender
+                        .send(Message::Response(response))
+                        .expect("Error sending  message");
+                });
             }
             thread::sleep(std::time::Duration::from_millis(5));
         }

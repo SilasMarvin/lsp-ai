@@ -52,7 +52,7 @@ fn main() -> Result<()> {
         .init();
 
     let (connection, io_threads) = Connection::stdio();
-    let server_capabilities = serde_json::to_value(&ServerCapabilities {
+    let server_capabilities = serde_json::to_value(ServerCapabilities {
         completion_provider: Some(CompletionOptions::default()),
         text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Kind(
             TextDocumentSyncKind::INCREMENTAL,
@@ -77,7 +77,7 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     let transformer_backend: Box<dyn TransformerBackend + Send> = args.clone().try_into()?;
 
     // Set the memory_backend
-    let memory_backend: Arc<Mutex<Box<dyn MemoryBackend + Send>>> =
+    let memory_backend: Box<dyn MemoryBackend + Send> =
         Arc::new(Mutex::new(args.clone().try_into()?));
 
     // Wrap the connection for sharing between threads
@@ -87,6 +87,7 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     let last_worker_request = Arc::new(Mutex::new(None));
 
     // Thread local variables
+    // TODO: Setup some kind of handler for errors here
     let thread_memory_backend = memory_backend.clone();
     let thread_last_worker_request = last_worker_request.clone();
     let thread_connection = connection.clone();
@@ -97,7 +98,8 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
             thread_last_worker_request,
             thread_connection,
         )
-        .run();
+        .run()
+        .unwrap();
     });
 
     for msg in &connection.receiver {
@@ -143,13 +145,13 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
             Message::Notification(not) => {
                 if notification_is::<lsp_types::notification::DidOpenTextDocument>(&not) {
                     let params: DidOpenTextDocumentParams = serde_json::from_value(not.params)?;
-                    memory_backend.lock().opened_text_document(params)?;
+                    // memory_backend.lock().opened_text_document(params)?;
                 } else if notification_is::<lsp_types::notification::DidChangeTextDocument>(&not) {
                     let params: DidChangeTextDocumentParams = serde_json::from_value(not.params)?;
-                    memory_backend.lock().changed_text_document(params)?;
+                    // memory_backend.lock().changed_text_document(params)?;
                 } else if notification_is::<lsp_types::notification::DidRenameFiles>(&not) {
                     let params: RenameFilesParams = serde_json::from_value(not.params)?;
-                    memory_backend.lock().renamed_file(params)?;
+                    // memory_backend.lock().renamed_file(params)?;
                 }
             }
             _ => (),
@@ -170,18 +172,18 @@ mod tests {
     //////////////////////////////////////
     //////////////////////////////////////
 
-    #[test]
-    fn completion_with_default_arguments() {
+    #[tokio::test]
+    async fn completion_with_default_arguments() {
         let args = json!({});
         let configuration = Configuration::new(args).unwrap();
         let backend: Box<dyn TransformerBackend + Send> = configuration.clone().try_into().unwrap();
         let prompt = Prompt::new("".to_string(), "def fibn".to_string());
-        let response = backend.do_completion(&prompt).unwrap();
+        let response = backend.do_completion(&prompt).await.unwrap();
         assert!(!response.insert_text.is_empty())
     }
 
-    #[test]
-    fn completion_with_custom_gguf_model() {
+    #[tokio::test]
+    async fn completion_with_custom_gguf_model() {
         let args = json!({
             "initializationOptions": {
                 "memory": {
@@ -232,7 +234,7 @@ mod tests {
         let configuration = Configuration::new(args).unwrap();
         let backend: Box<dyn TransformerBackend + Send> = configuration.clone().try_into().unwrap();
         let prompt = Prompt::new("".to_string(), "def fibn".to_string());
-        let response = backend.do_completion(&prompt).unwrap();
+        let response = backend.do_completion(&prompt).await.unwrap();
         assert!(!response.insert_text.is_empty());
     }
 }

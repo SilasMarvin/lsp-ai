@@ -129,10 +129,6 @@ const fn openai_top_p_default() -> f32 {
     0.95
 }
 
-const fn openai_top_k_default() -> usize {
-    40
-}
-
 const fn openai_presence_penalty() -> f32 {
     0.
 }
@@ -155,7 +151,9 @@ pub struct OpenAI {
     pub auth_token_env_var_name: Option<String>,
     pub auth_token: Option<String>,
     // The completions endpoint
-    pub completions_endpoint: String,
+    pub completions_endpoint: Option<String>,
+    // The chat endpoint
+    pub chat_endpoint: Option<String>,
     // The model name
     pub model: String,
     // Fill in the middle support
@@ -168,8 +166,6 @@ pub struct OpenAI {
     // Other available args
     #[serde(default = "openai_top_p_default")]
     pub top_p: f32,
-    #[serde(default = "openai_top_k_default")]
-    pub top_k: usize,
     #[serde(default = "openai_presence_penalty")]
     pub presence_penalty: f32,
     #[serde(default = "openai_frequency_penalty")]

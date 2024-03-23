@@ -9,11 +9,11 @@ use crate::{
 mod llama_cpp;
 mod openai;
 
+#[async_trait::async_trait]
 pub trait TransformerBackend {
-    // Should all take an enum of chat messages or just a string for completion
-    fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse>;
-    fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse>;
-    fn do_generate_stream(
+    async fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse>;
+    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse>;
+    async fn do_generate_stream(
         &self,
         request: &GenerateStreamRequest,
     ) -> anyhow::Result<DoGenerateStreamResponse>;

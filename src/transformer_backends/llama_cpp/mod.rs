@@ -2,7 +2,6 @@ use anyhow::Context;
 use hf_hub::api::sync::ApiBuilder;
 use tracing::{debug, instrument};
 
-use super::TransformerBackend;
 use crate::{
     configuration::{self},
     memory_backends::Prompt,
@@ -15,6 +14,8 @@ use crate::{
 
 mod model;
 use model::Model;
+
+use super::TransformerBackend;
 
 pub struct LlamaCPP {
     model: Model,
@@ -62,9 +63,10 @@ impl LlamaCPP {
     }
 }
 
+#[async_trait::async_trait]
 impl TransformerBackend for LlamaCPP {
     #[instrument(skip(self))]
-    fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse> {
+    async fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse> {
         // let prompt = self.get_prompt_string(prompt)?;
         let prompt = &prompt.code;
         debug!("Prompt string for LLM: {}", prompt);
@@ -75,7 +77,7 @@ impl TransformerBackend for LlamaCPP {
     }
 
     #[instrument(skip(self))]
-    fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
+    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
         // let prompt = self.get_prompt_string(prompt)?;
         // debug!("Prompt string for LLM: {}", prompt);
         let prompt = &prompt.code;
@@ -86,7 +88,7 @@ impl TransformerBackend for LlamaCPP {
     }
 
     #[instrument(skip(self))]
-    fn do_generate_stream(
+    async fn do_generate_stream(
         &self,
         _request: &GenerateStreamRequest,
     ) -> anyhow::Result<DoGenerateStreamResponse> {

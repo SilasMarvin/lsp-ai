@@ -71,7 +71,7 @@ impl FileStore {
             .iter()
             .filter(|f| **f != current_document_uri)
         {
-            let needed = characters.checked_sub(rope.len_chars()).unwrap_or(0);
+            let needed = characters.saturating_sub(rope.len_chars());
             if needed == 0 {
                 break;
             }
@@ -99,7 +99,7 @@ impl FileStore {
             .clone();
         let cursor_index = rope.line_to_char(position.position.line as usize)
             + position.position.character as usize;
-        let start = cursor_index.checked_sub(characters / 2).unwrap_or(0);
+        let start = cursor_index.saturating_sub(characters / 2);
         let end = rope
             .len_chars()
             .min(cursor_index + (characters - (cursor_index - start)));
@@ -137,15 +137,15 @@ impl FileStore {
                 if is_chat_enabled || rope.len_chars() != cursor_index =>
             {
                 let max_length = tokens_to_estimated_characters(max_context_length);
-                let start = cursor_index.checked_sub(max_length / 2).unwrap_or(0);
+                let start = cursor_index.saturating_sub(max_length / 2);
                 let end = rope
                     .len_chars()
                     .min(cursor_index + (max_length - (cursor_index - start)));
 
                 if is_chat_enabled {
-                    rope.insert(cursor_index, "{CURSOR}");
+                    rope.insert(cursor_index, "<CURSOR>");
                     let rope_slice = rope
-                        .get_slice(start..end + "{CURSOR}".chars().count())
+                        .get_slice(start..end + "<CURSOR>".chars().count())
                         .context("Error getting rope slice")?;
                     rope_slice.to_string()
                 } else {
@@ -166,9 +166,8 @@ impl FileStore {
                 }
             }
             _ => {
-                let start = cursor_index
-                    .checked_sub(tokens_to_estimated_characters(max_context_length))
-                    .unwrap_or(0);
+                let start =
+                    cursor_index.saturating_sub(tokens_to_estimated_characters(max_context_length));
                 let rope_slice = rope
                     .get_slice(start..cursor_index)
                     .context("Error getting rope slice")?;
@@ -178,9 +177,13 @@ impl FileStore {
     }
 }
 
+#[async_trait::async_trait]
 impl MemoryBackend for FileStore {
     #[instrument(skip(self))]
-    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
+    async fn get_filter_text(
+        &self,
+        position: &TextDocumentPositionParams,
+    ) -> anyhow::Result<String> {
         let rope = self
             .file_map
             .get(position.text_document.uri.as_str())
@@ -193,7 +196,7 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    fn build_prompt(
+    async fn build_prompt(
         &mut self,
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
@@ -207,7 +210,7 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    fn opened_text_document(
+    async fn opened_text_document(
         &mut self,
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
@@ -219,7 +222,7 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    fn changed_text_document(
+    async fn changed_text_document(
         &mut self,
         params: lsp_types::DidChangeTextDocumentParams,
     ) -> anyhow::Result<()> {
@@ -246,7 +249,7 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    fn renamed_file(&mut self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+    async fn renamed_file(&mut self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         for file_rename in params.files {
             if let Some(rope) = self.file_map.remove(&file_rename.old_uri) {
                 self.file_map.insert(file_rename.new_uri, rope);
