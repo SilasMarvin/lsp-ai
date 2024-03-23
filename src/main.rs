@@ -6,25 +6,31 @@ use lsp_types::{
     RenameFilesParams, ServerCapabilities, TextDocumentSyncKind,
 };
 use parking_lot::Mutex;
-use std::{sync::Arc, thread};
+use std::{
+    sync::{mpsc, Arc},
+    thread,
+};
 use tracing::error;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 mod configuration;
 mod custom_requests;
 mod memory_backends;
+mod memory_worker;
 mod template;
 mod transformer_backends;
+mod transformer_worker;
 mod utils;
-mod worker;
 
 use configuration::Configuration;
 use custom_requests::generate::Generate;
 use memory_backends::MemoryBackend;
 use transformer_backends::TransformerBackend;
-use worker::{CompletionRequest, GenerateRequest, Worker, WorkerRequest};
+use transformer_worker::{CompletionRequest, GenerateRequest, WorkerRequest};
 
-use crate::{custom_requests::generate_stream::GenerateStream, worker::GenerateStreamRequest};
+use crate::{
+    custom_requests::generate_stream::GenerateStream, transformer_worker::GenerateStreamRequest,
+};
 
 fn notification_is<N: lsp_types::notification::Notification>(notification: &Notification) -> bool {
     notification.method == N::METHOD
@@ -71,35 +77,39 @@ fn main() -> Result<()> {
 // Completion requests may take a few seconds given the model configuration and hardware allowed, and we only want to process the latest completion request
 // Note that we also want to have the memory backend in the worker thread as that may also involve heavy computations
 fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
-    let args = Configuration::new(args)?;
-
-    // Set the transformer_backend
-    let transformer_backend: Box<dyn TransformerBackend + Send> = args.clone().try_into()?;
-
-    // Set the memory_backend
-    let memory_backend: Box<dyn MemoryBackend + Send> =
-        Arc::new(Mutex::new(args.clone().try_into()?));
+    // Build our configuration
+    let configuration = Configuration::new(args)?;
 
     // Wrap the connection for sharing between threads
     let connection = Arc::new(connection);
 
-    // How we communicate between the worker and receiver threads
+    // Our channel we use to communicate with our transformer_worker
     let last_worker_request = Arc::new(Mutex::new(None));
 
+    // Setup our memory_worker
+    // TODO: Setup some kind of error handler
+    // Set the memory_backend
+    // The channel we use to communicate with our memory_worker
+    let (memory_tx, memory_rx) = mpsc::channel();
+    let memory_backend: Box<dyn MemoryBackend + Send + Sync> = configuration.clone().try_into()?;
+    thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
+
+    // Setup our transformer_worker
     // Thread local variables
     // TODO: Setup some kind of handler for errors here
-    let thread_memory_backend = memory_backend.clone();
+    // Set the transformer_backend
+    let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
+        configuration.clone().try_into()?;
     let thread_last_worker_request = last_worker_request.clone();
     let thread_connection = connection.clone();
+    let thread_memory_tx = memory_tx.clone();
     thread::spawn(move || {
-        Worker::new(
+        transformer_worker::run(
             transformer_backend,
-            thread_memory_backend,
+            thread_memory_tx,
             thread_last_worker_request,
             thread_connection,
         )
-        .run()
-        .unwrap();
     });
 
     for msg in &connection.receiver {
@@ -145,13 +155,13 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
             Message::Notification(not) => {
                 if notification_is::<lsp_types::notification::DidOpenTextDocument>(&not) {
                     let params: DidOpenTextDocumentParams = serde_json::from_value(not.params)?;
-                    // memory_backend.lock().opened_text_document(params)?;
+                    memory_tx.send(memory_worker::WorkerRequest::DidOpenTextDocument(params))?;
                 } else if notification_is::<lsp_types::notification::DidChangeTextDocument>(&not) {
                     let params: DidChangeTextDocumentParams = serde_json::from_value(not.params)?;
-                    // memory_backend.lock().changed_text_document(params)?;
+                    memory_tx.send(memory_worker::WorkerRequest::DidChangeTextDocument(params))?;
                 } else if notification_is::<lsp_types::notification::DidRenameFiles>(&not) {
                     let params: RenameFilesParams = serde_json::from_value(not.params)?;
-                    // memory_backend.lock().renamed_file(params)?;
+                    memory_tx.send(memory_worker::WorkerRequest::DidRenameFiles(params))?;
                 }
             }
             _ => (),
@@ -176,7 +186,8 @@ mod tests {
     async fn completion_with_default_arguments() {
         let args = json!({});
         let configuration = Configuration::new(args).unwrap();
-        let backend: Box<dyn TransformerBackend + Send> = configuration.clone().try_into().unwrap();
+        let backend: Box<dyn TransformerBackend + Send + Sync> =
+            configuration.clone().try_into().unwrap();
         let prompt = Prompt::new("".to_string(), "def fibn".to_string());
         let response = backend.do_completion(&prompt).await.unwrap();
         assert!(!response.insert_text.is_empty())
@@ -232,7 +243,8 @@ mod tests {
             }
         });
         let configuration = Configuration::new(args).unwrap();
-        let backend: Box<dyn TransformerBackend + Send> = configuration.clone().try_into().unwrap();
+        let backend: Box<dyn TransformerBackend + Send + Sync> =
+            configuration.clone().try_into().unwrap();
         let prompt = Prompt::new("".to_string(), "def fibn".to_string());
         let response = backend.do_completion(&prompt).await.unwrap();
         assert!(!response.insert_text.is_empty());

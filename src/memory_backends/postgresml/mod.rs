@@ -133,7 +133,7 @@ impl MemoryBackend for PostgresML {
 
     #[instrument(skip(self))]
     async fn build_prompt(
-        &mut self,
+        &self,
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt> {
@@ -142,7 +142,7 @@ impl MemoryBackend for PostgresML {
             .get_characters_around_position(position, 512)?;
         let res = self
             .collection
-            .vector_search(
+            .vector_search_local(
                 json!({
                     "query": {
                         "fields": {
@@ -154,7 +154,7 @@ impl MemoryBackend for PostgresML {
                     "limit": 5
                 })
                 .into(),
-                &mut self.pipeline,
+                &self.pipeline,
             )
             .await?;
         let context = res
@@ -181,7 +181,7 @@ impl MemoryBackend for PostgresML {
 
     #[instrument(skip(self))]
     async fn opened_text_document(
-        &mut self,
+        &self,
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
         let text = params.text_document.text.clone();
@@ -211,7 +211,7 @@ impl MemoryBackend for PostgresML {
 
     #[instrument(skip(self))]
     async fn changed_text_document(
-        &mut self,
+        &self,
         params: lsp_types::DidChangeTextDocumentParams,
     ) -> anyhow::Result<()> {
         let path = params.text_document.uri.path().to_owned();
@@ -220,7 +220,7 @@ impl MemoryBackend for PostgresML {
     }
 
     #[instrument(skip(self))]
-    async fn renamed_file(&mut self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+    async fn renamed_file(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         let mut task_collection = self.collection.clone();
         let task_params = params.clone();
         for file in task_params.files {

@@ -9,10 +9,10 @@ use tracing::instrument;
 use crate::{
     configuration::{self, ChatMessage},
     memory_backends::Prompt,
-    utils::{format_chat_messages, format_context_code},
-    worker::{
+    transformer_worker::{
         DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
     },
+    utils::{format_chat_messages, format_context_code},
 };
 
 use super::TransformerBackend;

@@ -6,10 +6,10 @@ use crate::{
     configuration::{self},
     memory_backends::Prompt,
     template::apply_chat_template,
-    utils::format_chat_messages,
-    worker::{
+    transformer_worker::{
         DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
     },
+    utils::format_chat_messages,
 };
 
 mod model;

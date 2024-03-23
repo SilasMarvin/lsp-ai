@@ -31,17 +31,14 @@ pub trait MemoryBackend {
     async fn init(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn opened_text_document(
-        &mut self,
-        params: DidOpenTextDocumentParams,
-    ) -> anyhow::Result<()>;
+    async fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
     async fn changed_text_document(
-        &mut self,
+        &self,
         params: DidChangeTextDocumentParams,
     ) -> anyhow::Result<()>;
-    async fn renamed_file(&mut self, params: RenameFilesParams) -> anyhow::Result<()>;
+    async fn renamed_file(&self, params: RenameFilesParams) -> anyhow::Result<()>;
     async fn build_prompt(
-        &mut self,
+        &self,
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt>;
@@ -51,7 +48,7 @@ pub trait MemoryBackend {
     ) -> anyhow::Result<String>;
 }
 
-impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send> {
+impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send + Sync> {
     type Error = anyhow::Error;
 
     fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {

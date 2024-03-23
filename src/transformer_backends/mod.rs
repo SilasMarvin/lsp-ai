@@ -1,7 +1,7 @@
 use crate::{
     configuration::{Configuration, ValidTransformerBackend},
     memory_backends::Prompt,
-    worker::{
+    transformer_worker::{
         DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
     },
 };
@@ -19,7 +19,7 @@ pub trait TransformerBackend {
     ) -> anyhow::Result<DoGenerateStreamResponse>;
 }
 
-impl TryFrom<Configuration> for Box<dyn TransformerBackend + Send> {
+impl TryFrom<Configuration> for Box<dyn TransformerBackend + Send + Sync> {
     type Error = anyhow::Error;
 
     fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {

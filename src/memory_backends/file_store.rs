@@ -1,8 +1,9 @@
 use anyhow::Context;
 use indexmap::IndexSet;
 use lsp_types::TextDocumentPositionParams;
+use parking_lot::Mutex;
 use ropey::Rope;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use tracing::instrument;
 
 use crate::{
@@ -15,8 +16,8 @@ use super::{MemoryBackend, Prompt, PromptForType};
 pub struct FileStore {
     crawl: bool,
     configuration: Configuration,
-    file_map: HashMap<String, Rope>,
-    accessed_files: IndexSet<String>,
+    file_map: Mutex<HashMap<String, Rope>>,
+    accessed_files: Mutex<IndexSet<String>>,
 }
 
 // TODO: Put some thought into the crawling here. Do we want to have a crawl option where it tries to crawl through all relevant
@@ -37,8 +38,8 @@ impl FileStore {
         Self {
             crawl: file_store_config.crawl,
             configuration,
-            file_map: HashMap::new(),
-            accessed_files: IndexSet::new(),
+            file_map: Mutex::new(HashMap::new()),
+            accessed_files: Mutex::new(IndexSet::new()),
         }
     }
 
@@ -46,8 +47,8 @@ impl FileStore {
         Self {
             crawl: false,
             configuration,
-            file_map: HashMap::new(),
-            accessed_files: IndexSet::new(),
+            file_map: Mutex::new(HashMap::new()),
+            accessed_files: Mutex::new(IndexSet::new()),
         }
     }
 
@@ -60,6 +61,7 @@ impl FileStore {
         let current_document_uri = position.text_document.uri.to_string();
         let mut rope = self
             .file_map
+            .lock()
             .get(&current_document_uri)
             .context("Error file not found")?
             .clone();
@@ -68,6 +70,7 @@ impl FileStore {
         // Add to our rope if we need to
         for file in self
             .accessed_files
+            .lock()
             .iter()
             .filter(|f| **f != current_document_uri)
         {
@@ -75,7 +78,8 @@ impl FileStore {
             if needed == 0 {
                 break;
             }
-            let r = self.file_map.get(file).context("Error file not found")?;
+            let file_map = self.file_map.lock();
+            let r = file_map.get(file).context("Error file not found")?;
             let slice_max = needed.min(r.len_chars());
             let rope_str_slice = r
                 .get_slice(0..slice_max)
@@ -94,6 +98,7 @@ impl FileStore {
     ) -> anyhow::Result<String> {
         let rope = self
             .file_map
+            .lock()
             .get(position.text_document.uri.as_str())
             .context("Error file not found")?
             .clone();
@@ -186,6 +191,7 @@ impl MemoryBackend for FileStore {
     ) -> anyhow::Result<String> {
         let rope = self
             .file_map
+            .lock()
             .get(position.text_document.uri.as_str())
             .context("Error file not found")?
             .clone();
@@ -197,7 +203,7 @@ impl MemoryBackend for FileStore {
 
     #[instrument(skip(self))]
     async fn build_prompt(
-        &mut self,
+        &self,
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt> {
@@ -211,24 +217,24 @@ impl MemoryBackend for FileStore {
 
     #[instrument(skip(self))]
     async fn opened_text_document(
-        &mut self,
+        &self,
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
         let rope = Rope::from_str(&params.text_document.text);
         let uri = params.text_document.uri.to_string();
-        self.file_map.insert(uri.clone(), rope);
-        self.accessed_files.shift_insert(0, uri);
+        self.file_map.lock().insert(uri.clone(), rope);
+        self.accessed_files.lock().shift_insert(0, uri);
         Ok(())
     }
 
     #[instrument(skip(self))]
     async fn changed_text_document(
-        &mut self,
+        &self,
         params: lsp_types::DidChangeTextDocumentParams,
     ) -> anyhow::Result<()> {
         let uri = params.text_document.uri.to_string();
-        let rope = self
-            .file_map
+        let mut file_map = self.file_map.lock();
+        let rope = file_map
             .get_mut(&uri)
             .context("Error trying to get file that does not exist")?;
         for change in params.content_changes {
@@ -244,15 +250,16 @@ impl MemoryBackend for FileStore {
                 *rope = Rope::from_str(&change.text);
             }
         }
-        self.accessed_files.shift_insert(0, uri);
+        self.accessed_files.lock().shift_insert(0, uri);
         Ok(())
     }
 
     #[instrument(skip(self))]
-    async fn renamed_file(&mut self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+    async fn renamed_file(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         for file_rename in params.files {
-            if let Some(rope) = self.file_map.remove(&file_rename.old_uri) {
-                self.file_map.insert(file_rename.new_uri, rope);
+            let mut file_map = self.file_map.lock();
+            if let Some(rope) = file_map.remove(&file_rename.old_uri) {
+                file_map.insert(file_rename.new_uri, rope);
             }
         }
         Ok(())
