@@ -19,6 +19,7 @@ pub enum ValidMemoryBackend {
 pub enum ValidTransformerBackend {
     LlamaCPP(ModelGGUF),
     OpenAI(OpenAI),
+    Anthropic(Anthropic),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -36,6 +37,7 @@ pub struct Chat {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[allow(clippy::upper_case_acronyms)]
 pub struct FIM {
     pub start: String,
     pub middle: String,
@@ -129,10 +131,6 @@ const fn openai_top_p_default() -> f32 {
     0.95
 }
 
-const fn openai_top_k_default() -> usize {
-    40
-}
-
 const fn openai_presence_penalty() -> f32 {
     0.
 }
@@ -149,13 +147,15 @@ const fn openai_max_context() -> usize {
     DEFAULT_OPENAI_MAX_CONTEXT
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct OpenAI {
     // The auth token env var name
     pub auth_token_env_var_name: Option<String>,
     pub auth_token: Option<String>,
     // The completions endpoint
-    pub completions_endpoint: String,
+    pub completions_endpoint: Option<String>,
+    // The chat endpoint
+    pub chat_endpoint: Option<String>,
     // The model name
     pub model: String,
     // Fill in the middle support
@@ -168,8 +168,6 @@ pub struct OpenAI {
     // Other available args
     #[serde(default = "openai_top_p_default")]
     pub top_p: f32,
-    #[serde(default = "openai_top_k_default")]
-    pub top_k: usize,
     #[serde(default = "openai_presence_penalty")]
     pub presence_penalty: f32,
     #[serde(default = "openai_frequency_penalty")]
@@ -181,8 +179,34 @@ pub struct OpenAI {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct Anthropic {
+    // The auth token env var name
+    pub auth_token_env_var_name: Option<String>,
+    pub auth_token: Option<String>,
+    // The completions endpoint
+    pub completions_endpoint: Option<String>,
+    // The chat endpoint
+    pub chat_endpoint: Option<String>,
+    // The model name
+    pub model: String,
+    // Fill in the middle support
+    pub fim: Option<FIM>,
+    // The maximum number of new tokens to generate
+    #[serde(default)]
+    pub max_tokens: MaxTokens,
+    // Chat args
+    pub chat: Chat,
+    // System prompt
+    #[serde(default = "openai_top_p_default")]
+    pub top_p: f32,
+    #[serde(default = "openai_temperature")]
+    pub temperature: f32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 struct ValidTransformerConfiguration {
     openai: Option<OpenAI>,
+    anthropic: Option<Anthropic>,
     model_gguf: Option<ModelGGUF>,
 }
 
@@ -190,6 +214,7 @@ impl Default for ValidTransformerConfiguration {
     fn default() -> Self {
         Self {
             model_gguf: Some(ModelGGUF::default()),
+            anthropic: None,
             openai: None,
         }
     }

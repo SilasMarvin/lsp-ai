@@ -40,7 +40,7 @@ impl PostgresML {
         };
         // TODO: Think on the naming of the collection
         // Maybe filter on metadata or I'm not sure
-        let collection = Collection::new("test-lsp-ai-2", Some(database_url))?;
+        let collection = Collection::new("test-lsp-ai-3", Some(database_url))?;
         // TODO: Review the pipeline
         let pipeline = Pipeline::new(
             "v1",
@@ -50,7 +50,7 @@ impl PostgresML {
                         "splitter": {
                             "model": "recursive_character",
                             "parameters": {
-                                "chunk_size": 512,
+                                "chunk_size": 1500,
                                 "chunk_overlap": 40
                             }
                         },
@@ -90,7 +90,7 @@ impl PostgresML {
                         .into_iter()
                         .map(|path| {
                             let text = std::fs::read_to_string(&path)
-                                .expect(format!("Error reading path: {}", path).as_str());
+                                .unwrap_or_else(|_| panic!("Error reading path: {}", path));
                             json!({
                                 "id": path,
                                 "text": text
@@ -121,24 +121,28 @@ impl PostgresML {
     }
 }
 
+#[async_trait::async_trait]
 impl MemoryBackend for PostgresML {
     #[instrument(skip(self))]
-    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
-        self.file_store.get_filter_text(position)
+    async fn get_filter_text(
+        &self,
+        position: &TextDocumentPositionParams,
+    ) -> anyhow::Result<String> {
+        self.file_store.get_filter_text(position).await
     }
 
     #[instrument(skip(self))]
-    fn build_prompt(
-        &mut self,
+    async fn build_prompt(
+        &self,
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt> {
-        // This is blocking, but that is ok as we only query for it from the worker when we are actually doing a transform
         let query = self
             .file_store
             .get_characters_around_position(position, 512)?;
-        let res = self.runtime.block_on(
-            self.collection.vector_search(
+        let res = self
+            .collection
+            .vector_search_local(
                 json!({
                     "query": {
                         "fields": {
@@ -150,9 +154,9 @@ impl MemoryBackend for PostgresML {
                     "limit": 5
                 })
                 .into(),
-                &mut self.pipeline,
-            ),
-        )?;
+                &self.pipeline,
+            )
+            .await?;
         let context = res
             .into_iter()
             .map(|c| {
@@ -176,8 +180,8 @@ impl MemoryBackend for PostgresML {
     }
 
     #[instrument(skip(self))]
-    fn opened_text_document(
-        &mut self,
+    async fn opened_text_document(
+        &self,
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
         let text = params.text_document.text.clone();
@@ -185,68 +189,63 @@ impl MemoryBackend for PostgresML {
         let task_added_pipeline = self.added_pipeline;
         let mut task_collection = self.collection.clone();
         let mut task_pipeline = self.pipeline.clone();
-        self.runtime.spawn(async move {
-            if !task_added_pipeline {
-                task_collection
-                    .add_pipeline(&mut task_pipeline)
-                    .await
-                    .expect("PGML - Error adding pipeline to collection");
-            }
+        if !task_added_pipeline {
+            task_collection
+                .add_pipeline(&mut task_pipeline)
+                .await
+                .expect("PGML - Error adding pipeline to collection");
+        }
+        task_collection
+            .upsert_documents(
+                vec![json!({
+                    "id": path,
+                    "text": text
+                })
+                .into()],
+                None,
+            )
+            .await
+            .expect("PGML - Error upserting documents");
+        self.file_store.opened_text_document(params).await
+    }
+
+    #[instrument(skip(self))]
+    async fn changed_text_document(
+        &self,
+        params: lsp_types::DidChangeTextDocumentParams,
+    ) -> anyhow::Result<()> {
+        let path = params.text_document.uri.path().to_owned();
+        self.debounce_tx.send(path)?;
+        self.file_store.changed_text_document(params).await
+    }
+
+    #[instrument(skip(self))]
+    async fn renamed_file(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+        let mut task_collection = self.collection.clone();
+        let task_params = params.clone();
+        for file in task_params.files {
+            task_collection
+                .delete_documents(
+                    json!({
+                        "id": file.old_uri
+                    })
+                    .into(),
+                )
+                .await
+                .expect("PGML - Error deleting file");
+            let text = std::fs::read_to_string(&file.new_uri).expect("PGML - Error reading file");
             task_collection
                 .upsert_documents(
                     vec![json!({
-                        "id": path,
+                        "id": file.new_uri,
                         "text": text
                     })
                     .into()],
                     None,
                 )
                 .await
-                .expect("PGML - Error upserting documents");
-        });
-        self.file_store.opened_text_document(params)
-    }
-
-    #[instrument(skip(self))]
-    fn changed_text_document(
-        &mut self,
-        params: lsp_types::DidChangeTextDocumentParams,
-    ) -> anyhow::Result<()> {
-        let path = params.text_document.uri.path().to_owned();
-        self.debounce_tx.send(path)?;
-        self.file_store.changed_text_document(params)
-    }
-
-    #[instrument(skip(self))]
-    fn renamed_file(&mut self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
-        let mut task_collection = self.collection.clone();
-        let task_params = params.clone();
-        self.runtime.spawn(async move {
-            for file in task_params.files {
-                task_collection
-                    .delete_documents(
-                        json!({
-                            "id": file.old_uri
-                        })
-                        .into(),
-                    )
-                    .await
-                    .expect("PGML - Error deleting file");
-                let text =
-                    std::fs::read_to_string(&file.new_uri).expect("PGML - Error reading file");
-                task_collection
-                    .upsert_documents(
-                        vec![json!({
-                            "id": file.new_uri,
-                            "text": text
-                        })
-                        .into()],
-                        None,
-                    )
-                    .await
-                    .expect("PGML - Error adding pipeline to collection");
-            }
-        });
-        self.file_store.renamed_file(params)
+                .expect("PGML - Error adding pipeline to collection");
+        }
+        self.file_store.renamed_file(params).await
     }
 }

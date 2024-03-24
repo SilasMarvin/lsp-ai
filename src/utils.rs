@@ -20,15 +20,19 @@ pub fn tokens_to_estimated_characters(tokens: usize) -> usize {
     tokens * 4
 }
 
-pub fn format_chat_messages(messages: &Vec<ChatMessage>, prompt: &Prompt) -> Vec<ChatMessage> {
+pub fn format_chat_messages(messages: &[ChatMessage], prompt: &Prompt) -> Vec<ChatMessage> {
     messages
         .iter()
         .map(|m| ChatMessage {
             role: m.role.to_owned(),
             content: m
                 .content
-                .replace("{context}", &prompt.context)
-                .replace("{code}", &prompt.code),
+                .replace("{CONTEXT}", &prompt.context)
+                .replace("{CODE}", &prompt.code),
         })
         .collect()
+}
+
+pub fn format_context_code(context: &str, code: &str) -> String {
+    format!("{context}\n\n{code}")
 }

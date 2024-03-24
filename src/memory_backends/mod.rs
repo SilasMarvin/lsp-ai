@@ -26,22 +26,29 @@ pub enum PromptForType {
     Generate,
 }
 
+#[async_trait::async_trait]
 pub trait MemoryBackend {
-    fn init(&self) -> anyhow::Result<()> {
+    async fn init(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    fn opened_text_document(&mut self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
-    fn changed_text_document(&mut self, params: DidChangeTextDocumentParams) -> anyhow::Result<()>;
-    fn renamed_file(&mut self, params: RenameFilesParams) -> anyhow::Result<()>;
-    fn build_prompt(
-        &mut self,
+    async fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
+    async fn changed_text_document(
+        &self,
+        params: DidChangeTextDocumentParams,
+    ) -> anyhow::Result<()>;
+    async fn renamed_file(&self, params: RenameFilesParams) -> anyhow::Result<()>;
+    async fn build_prompt(
+        &self,
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt>;
-    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String>;
+    async fn get_filter_text(
+        &self,
+        position: &TextDocumentPositionParams,
+    ) -> anyhow::Result<String>;
 }
 
-impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send> {
+impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send + Sync> {
     type Error = anyhow::Error;
 
     fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {
@@ -52,6 +59,25 @@ impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send> {
             ValidMemoryBackend::PostgresML(postgresml_config) => Ok(Box::new(
                 postgresml::PostgresML::new(postgresml_config, configuration)?,
             )),
+        }
+    }
+}
+
+// This makes testing much easier. Every transformer backend takes in a prompt. When verifying they work, its
+// easier to just pass in a default prompt.
+#[cfg(test)]
+impl Prompt {
+    pub fn default_with_cursor() -> Self {
+        Self {
+            context: r#"def test_context():\n    pass"#.to_string(),
+            code: r#"def test_code():\n    <CURSOR>"#.to_string(),
+        }
+    }
+
+    pub fn default_without_cursor() -> Self {
+        Self {
+            context: r#"def test_context():\n    pass"#.to_string(),
+            code: r#"def test_code():\n    "#.to_string(),
         }
     }
 }
