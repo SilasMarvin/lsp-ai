@@ -189,8 +189,6 @@ pub struct Anthropic {
     pub chat_endpoint: Option<String>,
     // The model name
     pub model: String,
-    // Fill in the middle support
-    pub fim: Option<FIM>,
     // The maximum number of new tokens to generate
     #[serde(default)]
     pub max_tokens: MaxTokens,
@@ -201,6 +199,8 @@ pub struct Anthropic {
     pub top_p: f32,
     #[serde(default = "openai_temperature")]
     pub temperature: f32,
+    #[serde(default = "openai_max_context")]
+    max_context: usize,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -273,6 +273,8 @@ impl Configuration {
             Ok(ValidTransformerBackend::LlamaCPP(model_gguf))
         } else if let Some(openai) = self.valid_config.transformer.openai {
             Ok(ValidTransformerBackend::OpenAI(openai))
+        } else if let Some(anthropic) = self.valid_config.transformer.anthropic {
+            Ok(ValidTransformerBackend::Anthropic(anthropic))
         } else {
             anyhow::bail!("Invalid model configuration")
         }
@@ -295,8 +297,10 @@ impl Configuration {
                 .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX))
         } else if let Some(openai_config) = &self.valid_config.transformer.openai {
             Ok(openai_config.max_context)
+        } else if let Some(anthropic_config) = &self.valid_config.transformer.anthropic {
+            Ok(anthropic_config.max_context)
         } else {
-            anyhow::bail!("We currently only support gguf models using llama cpp")
+            anyhow::bail!("Failed to get max context for transformer backend")
         }
     }
 
@@ -305,6 +309,8 @@ impl Configuration {
             Ok(model_gguf.fim.as_ref())
         } else if let Some(openai_config) = &self.valid_config.transformer.openai {
             Ok(openai_config.fim.as_ref())
+        } else if self.valid_config.transformer.anthropic.is_some() {
+            Ok(None)
         } else {
             anyhow::bail!("We currently only support gguf models using llama cpp")
         }
@@ -315,6 +321,8 @@ impl Configuration {
             Ok(model_gguf.chat.as_ref())
         } else if let Some(openai_config) = &self.valid_config.transformer.openai {
             Ok(openai_config.chat.as_ref())
+        } else if let Some(anthropic_config) = &self.valid_config.transformer.anthropic {
+            Ok(Some(&anthropic_config.chat))
         } else {
             anyhow::bail!("We currently only support gguf models using llama cpp")
         }
