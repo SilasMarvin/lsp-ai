@@ -54,7 +54,6 @@ fn main() -> Result<()> {
     FmtSubscriber::builder()
         .with_writer(std::io::stderr)
         .with_env_filter(EnvFilter::from_env("LSP_AI_LOG"))
-        // .with_max_level(tracing::Level::TRACE)
         .init();
 
     let (connection, io_threads) = Connection::stdio();
@@ -81,6 +80,10 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
 
     // Our channel we use to communicate with our transformer_worker
     let last_worker_request = Arc::new(Mutex::new(None));
+
+    // TODO:
+    // Both of these workers should be resiliant to errors
+    // If they have an error they should just try to restart. It should be logged as an error, but it shouldn't kill the process
 
     // Setup our memory_worker
     // TODO: Setup some kind of error handler
