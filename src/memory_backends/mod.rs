@@ -73,4 +73,11 @@ impl Prompt {
             code: r#"def test_code():\n    <CURSOR>"#.to_string(),
         }
     }
+
+    pub fn default_without_cursor() -> Self {
+        Self {
+            context: r#"def test_context():\n    pass"#.to_string(),
+            code: r#"def test_code():\n    "#.to_string(),
+        }
+    }
 }

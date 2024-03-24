@@ -6,6 +6,7 @@ use crate::{
     },
 };
 
+mod anthropic;
 mod llama_cpp;
 mod openai;
 
@@ -29,6 +30,9 @@ impl TryFrom<Configuration> for Box<dyn TransformerBackend + Send + Sync> {
             }
             ValidTransformerBackend::OpenAI(openai_config) => {
                 Ok(Box::new(openai::OpenAI::new(openai_config)))
+            }
+            ValidTransformerBackend::Anthropic(anthropic_config) => {
+                Ok(Box::new(anthropic::Anthropic::new(anthropic_config)))
             }
         }
     }

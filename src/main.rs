@@ -72,10 +72,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// This main loop is tricky
-// We create a worker thread that actually does the heavy lifting because we do not want to process every completion request we get
-// Completion requests may take a few seconds given the model configuration and hardware allowed, and we only want to process the latest completion request
-// Note that we also want to have the memory backend in the worker thread as that may also involve heavy computations
 fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     // Build our configuration
     let configuration = Configuration::new(args)?;
