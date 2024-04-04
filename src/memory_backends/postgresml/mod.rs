@@ -7,7 +7,7 @@ use anyhow::Context;
 use lsp_types::TextDocumentPositionParams;
 use pgml::{Collection, Pipeline};
 use serde_json::json;
-use tokio::{runtime::Runtime, time};
+use tokio::time;
 use tracing::instrument;
 
 use crate::{
@@ -22,7 +22,6 @@ pub struct PostgresML {
     file_store: FileStore,
     collection: Collection,
     pipeline: Pipeline,
-    runtime: Runtime,
     debounce_tx: Sender<String>,
     added_pipeline: bool,
 }
@@ -62,12 +61,11 @@ impl PostgresML {
                 .into(),
             ),
         )?;
-        // Create our own runtime
+        // Setup up a debouncer for changed text documents
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()?;
-        // Setup up a debouncer for changed text documents
         let mut task_collection = collection.clone();
         let (debounce_tx, debounce_rx) = mpsc::channel::<String>();
         runtime.spawn(async move {
@@ -106,15 +104,11 @@ impl PostgresML {
                 }
             }
         });
-        // TODO: Maybe
-        // Need to crawl the root path and or workspace folders
-        // Or set some kind of did crawl for it
         Ok(Self {
             configuration,
             file_store,
             collection,
             pipeline,
-            runtime,
             debounce_tx,
             added_pipeline: false,
         })

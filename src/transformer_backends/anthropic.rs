@@ -41,17 +41,13 @@ impl Anthropic {
         messages: Vec<ChatMessage>,
         max_tokens: usize,
     ) -> anyhow::Result<String> {
-        eprintln!(
-            "SENDING CHAT REQUEST WITH PROMPT: ******\n{:?}\n******",
-            messages
-        );
         let client = reqwest::Client::new();
         let token = if let Some(env_var_name) = &self.configuration.auth_token_env_var_name {
             std::env::var(env_var_name)?
         } else if let Some(token) = &self.configuration.auth_token {
             token.to_string()
         } else {
-            anyhow::bail!("Please set `auth_token_env_var_name` or `auth_token` in `openai` to use an OpenAI compatible API");
+            anyhow::bail!("Please set `auth_token_env_var_name` or `auth_token` in `transformer->anthropic` to use an Anthropic");
         };
         let res: AnthropicChatResponse = client
             .post(
@@ -111,7 +107,7 @@ impl TransformerBackend for Anthropic {
         let insert_text = match &self.configuration.chat.completion {
             Some(messages) => self.do_get_chat(prompt, messages, max_tokens).await?,
             None => {
-                anyhow::bail!("Please provide `anthropic->chat->completion` messages")
+                anyhow::bail!("Please set `transformer->anthropic->chat->completion` messages")
             }
         };
         Ok(DoCompletionResponse { insert_text })
@@ -124,7 +120,7 @@ impl TransformerBackend for Anthropic {
         let generated_text = match &self.configuration.chat.generation {
             Some(messages) => self.do_get_chat(prompt, messages, max_tokens).await?,
             None => {
-                anyhow::bail!("Please provide `anthropic->chat->generation` messages")
+                anyhow::bail!("Please set `transformer->anthropic->chat->generation` messages")
             }
         };
         Ok(DoGenerateResponse { generated_text })

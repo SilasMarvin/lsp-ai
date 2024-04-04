@@ -74,6 +74,7 @@ fn main() -> Result<()> {
 fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     // Build our configuration
     let configuration = Configuration::new(args)?;
+    eprintln!("GOT THE CONFIG: {:?}", configuration);
 
     // Wrap the connection for sharing between threads
     let connection = Arc::new(connection);

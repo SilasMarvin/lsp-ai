@@ -3,7 +3,7 @@ use indexmap::IndexSet;
 use lsp_types::TextDocumentPositionParams;
 use parking_lot::Mutex;
 use ropey::Rope;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use tracing::instrument;
 
 use crate::{
@@ -14,29 +14,16 @@ use crate::{
 use super::{MemoryBackend, Prompt, PromptForType};
 
 pub struct FileStore {
-    crawl: bool,
+    _crawl: bool,
     configuration: Configuration,
     file_map: Mutex<HashMap<String, Rope>>,
     accessed_files: Mutex<IndexSet<String>>,
 }
 
-// TODO: Put some thought into the crawling here. Do we want to have a crawl option where it tries to crawl through all relevant
-// files and then when asked for context it loads them in by the most recently accessed? That seems kind of silly honestly, but I could see
-// how users who want to use models with massive context lengths would just want their entire project as context for generation tasks
-// I'm not sure yet, this is something I need to think through more
-
-// Ok here are some more ideas
-// We take a crawl arg which is a bool of true or false for file_store
-// If true we crawl until we get to the max_context_length and then we stop crawling
-// We keep track of the last opened / changed files, and prioritize those when building the context for our llms
-
-// For memory backends like PostgresML, they will need to take some kind of max_context_length to crawl or something.
-// In other words, there needs to be some specification for how much they should be crawling because the limiting happens in the vector_recall
 impl FileStore {
     pub fn new(file_store_config: configuration::FileStore, configuration: Configuration) -> Self {
-        // TODO: maybe crawl
         Self {
-            crawl: file_store_config.crawl,
+            _crawl: file_store_config.crawl,
             configuration,
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
@@ -45,7 +32,7 @@ impl FileStore {
 
     pub fn new_without_crawl(configuration: Configuration) -> Self {
         Self {
-            crawl: false,
+            _crawl: false,
             configuration,
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
@@ -135,8 +122,7 @@ impl FileStore {
                 .unwrap_or(false),
         };
 
-        // We only want to do FIM if the user has enabled it, the cursor is not at the end of the file,
-        // and the user has not enabled chat
+        // We only want to do FIM if the user has enabled it and the user has not enabled chat
         Ok(match (is_chat_enabled, self.configuration.get_fim()) {
             r @ (true, _) | r @ (false, Some(_))
                 if is_chat_enabled || rope.len_chars() != cursor_index =>

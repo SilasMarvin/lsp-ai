@@ -31,20 +31,23 @@ impl Model {
             .unwrap_or_else(|| Ok(1000))?;
 
         // Initialize the model_params
-        let model_params = {
-            #[cfg(feature = "cublas")]
-            if !params.disable_gpu {
-                LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers)
-            } else {
-                LlamaModelParams::default()
-            }
-            #[cfg(not(feature = "cublas"))]
-            LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers)
-        };
+        let model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
 
         // Load the model
+        eprintln!();
+        eprintln!();
+        eprintln!();
+        eprintln!();
+        eprintln!();
+        eprintln!();
         debug!("Loading model at path: {:?}", model_path);
         let model = LlamaModel::load_from_file(&BACKEND, model_path, &model_params)?;
+        eprintln!();
+        eprintln!("LOADED THE MODEL");
+        eprintln!();
+        eprintln!();
+        eprintln!();
+        eprintln!();
 
         // Get n_ctx if set in kwargs
         // As a default we set it to 2048
@@ -65,7 +68,7 @@ impl Model {
     pub fn complete(&self, prompt: &str, max_new_tokens: usize) -> anyhow::Result<String> {
         // initialize the context
         let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(Some(self.n_ctx.clone()))
+            .with_n_ctx(Some(self.n_ctx))
             .with_n_batch(self.n_ctx.get());
 
         let mut ctx = self

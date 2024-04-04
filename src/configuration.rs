@@ -218,19 +218,18 @@ pub struct ValidConfiguration {
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct ValidClientParams {
     #[serde(alias = "rootURI")]
-    root_uri: Option<String>,
-    workspace_folders: Option<Vec<String>>,
+    _root_uri: Option<String>,
+    _workspace_folders: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Configuration {
     pub config: ValidConfiguration,
-    client_params: ValidClientParams,
+    _client_params: ValidClientParams,
 }
 
 impl Configuration {
     pub fn new(mut args: Value) -> Result<Self> {
-        eprintln!("\n\n{}\n\n", args.to_string());
         let configuration_args = args
             .as_object_mut()
             .context("Server configuration must be a JSON object")?
@@ -242,7 +241,7 @@ impl Configuration {
         let client_params: ValidClientParams = serde_json::from_value(args)?;
         Ok(Self {
             config: valid_args,
-            client_params,
+            _client_params: client_params,
         })
     }
 

@@ -34,6 +34,7 @@ async-trait = "0.1.78"
 
 [features]
 default = []
+cublas = ["llama-cpp-2/cublas"]
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
