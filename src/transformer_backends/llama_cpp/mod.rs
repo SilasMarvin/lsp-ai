@@ -19,12 +19,12 @@ use super::TransformerBackend;
 
 pub struct LlamaCPP {
     model: Model,
-    configuration: configuration::ModelGGUF,
+    configuration: configuration::LLaMACPP,
 }
 
 impl LlamaCPP {
     #[instrument]
-    pub fn new(configuration: configuration::ModelGGUF) -> anyhow::Result<Self> {
+    pub fn new(configuration: configuration::LLaMACPP) -> anyhow::Result<Self> {
         let api = ApiBuilder::new().with_progress(true).build()?;
         let name = configuration
             .model

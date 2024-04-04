@@ -125,19 +125,19 @@ impl FileStore {
         let is_chat_enabled = match prompt_for_type {
             PromptForType::Completion => self
                 .configuration
-                .get_chat()?
+                .get_chat()
                 .map(|c| c.completion.is_some())
                 .unwrap_or(false),
             PromptForType::Generate => self
                 .configuration
-                .get_chat()?
+                .get_chat()
                 .map(|c| c.generation.is_some())
                 .unwrap_or(false),
         };
 
         // We only want to do FIM if the user has enabled it, the cursor is not at the end of the file,
         // and the user has not enabled chat
-        Ok(match (is_chat_enabled, self.configuration.get_fim()?) {
+        Ok(match (is_chat_enabled, self.configuration.get_fim()) {
             r @ (true, _) | r @ (false, Some(_))
                 if is_chat_enabled || rope.len_chars() != cursor_index =>
             {
@@ -210,7 +210,7 @@ impl MemoryBackend for FileStore {
         let code = self.build_code(
             position,
             prompt_for_type,
-            self.configuration.get_max_context_length()?,
+            self.configuration.get_max_context_length(),
         )?;
         Ok(Prompt::new("".to_string(), code))
     }

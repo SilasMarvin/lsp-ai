@@ -24,8 +24,8 @@ impl TryFrom<Configuration> for Box<dyn TransformerBackend + Send + Sync> {
     type Error = anyhow::Error;
 
     fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {
-        match configuration.into_transformer_backend()? {
-            ValidTransformerBackend::LlamaCPP(model_gguf) => {
+        match configuration.config.transformer {
+            ValidTransformerBackend::LLaMACPP(model_gguf) => {
                 Ok(Box::new(llama_cpp::LlamaCPP::new(model_gguf)?))
             }
             ValidTransformerBackend::OpenAI(openai_config) => {

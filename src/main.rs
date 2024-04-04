@@ -81,22 +81,13 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     // Our channel we use to communicate with our transformer_worker
     let last_worker_request = Arc::new(Mutex::new(None));
 
-    // TODO:
-    // Both of these workers should be resiliant to errors
-    // If they have an error they should just try to restart. It should be logged as an error, but it shouldn't kill the process
-
-    // Setup our memory_worker
-    // TODO: Setup some kind of error handler
-    // Set the memory_backend
+    // Setup the memory backend and memory worker
     // The channel we use to communicate with our memory_worker
     let (memory_tx, memory_rx) = mpsc::channel();
     let memory_backend: Box<dyn MemoryBackend + Send + Sync> = configuration.clone().try_into()?;
     thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
 
-    // Setup our transformer_worker
-    // Thread local variables
-    // TODO: Setup some kind of handler for errors here
-    // Set the transformer_backend
+    // Setup our transformer worker
     let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
         configuration.clone().try_into()?;
     let thread_last_worker_request = last_worker_request.clone();

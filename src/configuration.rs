@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 
 const DEFAULT_LLAMA_CPP_N_CTX: usize = 1024;
@@ -11,15 +11,34 @@ const DEFAULT_MAX_GENERATION_TOKENS: usize = 256;
 
 pub type Kwargs = HashMap<String, Value>;
 
+#[derive(Debug, Clone, Deserialize)]
 pub enum ValidMemoryBackend {
+    #[serde(rename = "file_store")]
     FileStore(FileStore),
+    #[serde(rename = "postgresml")]
     PostgresML(PostgresML),
 }
 
+impl Default for ValidMemoryBackend {
+    fn default() -> Self {
+        ValidMemoryBackend::FileStore(FileStore::default())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub enum ValidTransformerBackend {
-    LlamaCPP(ModelGGUF),
+    #[serde(rename = "llamacpp")]
+    LLaMACPP(LLaMACPP),
+    #[serde(rename = "openai")]
     OpenAI(OpenAI),
+    #[serde(rename = "anthropic")]
     Anthropic(Anthropic),
+}
+
+impl Default for ValidTransformerBackend {
+    fn default() -> Self {
+        ValidTransformerBackend::LLaMACPP(LLaMACPP::default())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -62,27 +81,14 @@ impl Default for MaxTokens {
 #[derive(Clone, Debug, Deserialize)]
 pub struct PostgresML {
     pub database_url: Option<String>,
+    #[serde(default)]
     pub crawl: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct FileStore {
+    #[serde(default)]
     pub crawl: bool,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct ValidMemoryConfiguration {
-    file_store: Option<FileStore>,
-    postgresml: Option<PostgresML>,
-}
-
-impl Default for ValidMemoryConfiguration {
-    fn default() -> Self {
-        Self {
-            file_store: Some(FileStore::default()),
-            postgresml: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -92,7 +98,7 @@ pub struct Model {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct ModelGGUF {
+pub struct LLaMACPP {
     // The model to use
     #[serde(flatten)]
     pub model: Model,
@@ -108,7 +114,7 @@ pub struct ModelGGUF {
     pub kwargs: Kwargs,
 }
 
-impl Default for ModelGGUF {
+impl Default for LLaMACPP {
     fn default() -> Self {
         Self {
             model: Model {
@@ -203,27 +209,10 @@ pub struct Anthropic {
     max_context: usize,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-struct ValidTransformerConfiguration {
-    openai: Option<OpenAI>,
-    anthropic: Option<Anthropic>,
-    model_gguf: Option<ModelGGUF>,
-}
-
-impl Default for ValidTransformerConfiguration {
-    fn default() -> Self {
-        Self {
-            model_gguf: Some(ModelGGUF::default()),
-            anthropic: None,
-            openai: None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Default)]
-struct ValidConfiguration {
-    memory: ValidMemoryConfiguration,
-    transformer: ValidTransformerConfiguration,
+pub struct ValidConfiguration {
+    pub memory: ValidMemoryBackend,
+    pub transformer: ValidTransformerBackend,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -235,7 +224,7 @@ pub struct ValidClientParams {
 
 #[derive(Clone, Debug)]
 pub struct Configuration {
-    valid_config: ValidConfiguration,
+    pub config: ValidConfiguration,
     client_params: ValidClientParams,
 }
 
@@ -252,41 +241,18 @@ impl Configuration {
         };
         let client_params: ValidClientParams = serde_json::from_value(args)?;
         Ok(Self {
-            valid_config: valid_args,
+            config: valid_args,
             client_params,
         })
-    }
-
-    pub fn get_memory_backend(&self) -> Result<ValidMemoryBackend> {
-        // if self.valid_config.memory.file_store.is_some() {
-        if let Some(file_store) = &self.valid_config.memory.file_store {
-            Ok(ValidMemoryBackend::FileStore(file_store.to_owned()))
-        } else if let Some(postgresml) = &self.valid_config.memory.postgresml {
-            Ok(ValidMemoryBackend::PostgresML(postgresml.to_owned()))
-        } else {
-            anyhow::bail!("Invalid memory configuration")
-        }
-    }
-
-    pub fn into_transformer_backend(self) -> Result<ValidTransformerBackend> {
-        if let Some(model_gguf) = self.valid_config.transformer.model_gguf {
-            Ok(ValidTransformerBackend::LlamaCPP(model_gguf))
-        } else if let Some(openai) = self.valid_config.transformer.openai {
-            Ok(ValidTransformerBackend::OpenAI(openai))
-        } else if let Some(anthropic) = self.valid_config.transformer.anthropic {
-            Ok(ValidTransformerBackend::Anthropic(anthropic))
-        } else {
-            anyhow::bail!("Invalid model configuration")
-        }
     }
 
     ///////////////////////////////////////
     // Helpers for the Memory Backend /////
     ///////////////////////////////////////
 
-    pub fn get_max_context_length(&self) -> Result<usize> {
-        if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
-            Ok(model_gguf
+    pub fn get_max_context_length(&self) -> usize {
+        match &self.config.transformer {
+            ValidTransformerBackend::LLaMACPP(llama_cpp) => llama_cpp
                 .kwargs
                 .get("n_ctx")
                 .map(|v| {
@@ -294,37 +260,25 @@ impl Configuration {
                         .map(|u| u as usize)
                         .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX)
                 })
-                .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX))
-        } else if let Some(openai_config) = &self.valid_config.transformer.openai {
-            Ok(openai_config.max_context)
-        } else if let Some(anthropic_config) = &self.valid_config.transformer.anthropic {
-            Ok(anthropic_config.max_context)
-        } else {
-            anyhow::bail!("Failed to get max context for transformer backend")
+                .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX),
+            ValidTransformerBackend::OpenAI(openai) => openai.max_context,
+            ValidTransformerBackend::Anthropic(anthropic) => anthropic.max_context,
         }
     }
 
-    pub fn get_fim(&self) -> Result<Option<&FIM>> {
-        if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
-            Ok(model_gguf.fim.as_ref())
-        } else if let Some(openai_config) = &self.valid_config.transformer.openai {
-            Ok(openai_config.fim.as_ref())
-        } else if self.valid_config.transformer.anthropic.is_some() {
-            Ok(None)
-        } else {
-            anyhow::bail!("We currently only support gguf models using llama cpp")
+    pub fn get_fim(&self) -> Option<&FIM> {
+        match &self.config.transformer {
+            ValidTransformerBackend::LLaMACPP(llama_cpp) => llama_cpp.fim.as_ref(),
+            ValidTransformerBackend::OpenAI(openai) => openai.fim.as_ref(),
+            ValidTransformerBackend::Anthropic(_) => None,
         }
     }
 
-    pub fn get_chat(&self) -> Result<Option<&Chat>> {
-        if let Some(model_gguf) = &self.valid_config.transformer.model_gguf {
-            Ok(model_gguf.chat.as_ref())
-        } else if let Some(openai_config) = &self.valid_config.transformer.openai {
-            Ok(openai_config.chat.as_ref())
-        } else if let Some(anthropic_config) = &self.valid_config.transformer.anthropic {
-            Ok(Some(&anthropic_config.chat))
-        } else {
-            anyhow::bail!("We currently only support gguf models using llama cpp")
+    pub fn get_chat(&self) -> Option<&Chat> {
+        match &self.config.transformer {
+            ValidTransformerBackend::LLaMACPP(llama_cpp) => llama_cpp.chat.as_ref(),
+            ValidTransformerBackend::OpenAI(openai) => openai.chat.as_ref(),
+            ValidTransformerBackend::Anthropic(anthropic) => Some(&anthropic.chat),
         }
     }
 }
@@ -335,13 +289,14 @@ mod test {
     use serde_json::json;
 
     #[test]
-    fn model_gguf_config() {
+    fn llama_cpp_config() {
         let args = json!({
+            "initializationOptions": {
                 "memory": {
                     "file_store": {}
                 },
                 "transformer": {
-                    "model_gguf": {
+                    "llamacpp": {
                         "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
                         "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
                         "max_new_tokens": {
@@ -380,6 +335,7 @@ mod test {
                         "n_gpu_layers": 35,
                     }
                 }
+            }
         });
         Configuration::new(args).unwrap();
     }

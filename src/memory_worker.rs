@@ -4,6 +4,7 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, RenameFilesParams,
     TextDocumentPositionParams,
 };
+use tracing::error;
 
 use crate::memory_backends::{MemoryBackend, Prompt, PromptForType};
 
@@ -51,7 +52,39 @@ pub enum WorkerRequest {
     DidRenameFiles(RenameFilesParams),
 }
 
-pub fn run(
+async fn do_task(
+    request: WorkerRequest,
+    memory_backend: Arc<Box<dyn MemoryBackend + Send + Sync>>,
+) -> anyhow::Result<()> {
+    match request {
+        WorkerRequest::FilterText(params) => {
+            let filter_text = memory_backend.get_filter_text(&params.position).await?;
+            params
+                .tx
+                .send(filter_text)
+                .map_err(|_| anyhow::anyhow!("sending on channel failed"))?;
+        }
+        WorkerRequest::Prompt(params) => {
+            let prompt = memory_backend
+                .build_prompt(&params.position, params.prompt_for_type)
+                .await?;
+            params
+                .tx
+                .send(prompt)
+                .map_err(|_| anyhow::anyhow!("sending on channel failed"))?;
+        }
+        WorkerRequest::DidOpenTextDocument(params) => {
+            memory_backend.opened_text_document(params).await?;
+        }
+        WorkerRequest::DidChangeTextDocument(params) => {
+            memory_backend.changed_text_document(params).await?;
+        }
+        WorkerRequest::DidRenameFiles(params) => memory_backend.renamed_file(params).await?,
+    }
+    anyhow::Ok(())
+}
+
+fn do_run(
     memory_backend: Box<dyn MemoryBackend + Send + Sync>,
     rx: std::sync::mpsc::Receiver<WorkerRequest>,
 ) -> anyhow::Result<()> {
@@ -64,37 +97,18 @@ pub fn run(
         let request = rx.recv()?;
         let thread_memory_backend = memory_backend.clone();
         runtime.spawn(async move {
-            match request {
-                WorkerRequest::FilterText(params) => {
-                    let filter_text = thread_memory_backend
-                        .get_filter_text(&params.position)
-                        .await
-                        .unwrap();
-                    params.tx.send(filter_text).unwrap();
-                }
-                WorkerRequest::Prompt(params) => {
-                    let prompt = thread_memory_backend
-                        .build_prompt(&params.position, params.prompt_for_type)
-                        .await
-                        .unwrap();
-                    params.tx.send(prompt).unwrap();
-                }
-                WorkerRequest::DidOpenTextDocument(params) => {
-                    thread_memory_backend
-                        .opened_text_document(params)
-                        .await
-                        .unwrap();
-                }
-                WorkerRequest::DidChangeTextDocument(params) => {
-                    thread_memory_backend
-                        .changed_text_document(params)
-                        .await
-                        .unwrap();
-                }
-                WorkerRequest::DidRenameFiles(params) => {
-                    thread_memory_backend.renamed_file(params).await.unwrap()
-                }
+            if let Err(e) = do_task(request, thread_memory_backend).await {
+                error!("error in memory worker task: {e}")
             }
         });
+    }
+}
+
+pub fn run(
+    memory_backend: Box<dyn MemoryBackend + Send + Sync>,
+    rx: std::sync::mpsc::Receiver<WorkerRequest>,
+) {
+    if let Err(e) = do_run(memory_backend, rx) {
+        error!("error in memory worker: {e}")
     }
 }

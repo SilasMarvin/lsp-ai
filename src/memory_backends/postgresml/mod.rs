@@ -169,7 +169,7 @@ impl MemoryBackend for PostgresML {
             .join("\n\n");
         let code = self.file_store.build_code(position, prompt_for_type, 512)?;
         let max_characters =
-            tokens_to_estimated_characters(self.configuration.get_max_context_length()?);
+            tokens_to_estimated_characters(self.configuration.get_max_context_length());
         let context: String = context
             .chars()
             .take(max_characters - code.chars().count())

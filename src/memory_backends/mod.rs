@@ -52,7 +52,7 @@ impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send + Sync> {
     type Error = anyhow::Error;
 
     fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {
-        match configuration.get_memory_backend()? {
+        match configuration.config.memory.clone() {
             ValidMemoryBackend::FileStore(file_store_config) => Ok(Box::new(
                 file_store::FileStore::new(file_store_config, configuration),
             )),
