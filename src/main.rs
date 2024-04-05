@@ -53,6 +53,8 @@ fn main() -> Result<()> {
     // If the variables value is malformed or missing, sets the default log level to ERROR
     FmtSubscriber::builder()
         .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .without_time()
         .with_env_filter(EnvFilter::from_env("LSP_AI_LOG"))
         .init();
 
@@ -74,7 +76,6 @@ fn main() -> Result<()> {
 fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     // Build our configuration
     let configuration = Configuration::new(args)?;
-    eprintln!("GOT THE CONFIG: {:?}", configuration);
 
     // Wrap the connection for sharing between threads
     let connection = Arc::new(connection);

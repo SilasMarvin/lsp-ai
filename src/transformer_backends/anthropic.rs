@@ -102,7 +102,6 @@ impl Anthropic {
 impl TransformerBackend for Anthropic {
     #[instrument(skip(self))]
     async fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse> {
-        eprintln!("--------------{:?}---------------", prompt);
         let max_tokens = self.configuration.max_tokens.completion;
         let insert_text = match &self.configuration.chat.completion {
             Some(messages) => self.do_get_chat(prompt, messages, max_tokens).await?,
@@ -115,7 +114,6 @@ impl TransformerBackend for Anthropic {
 
     #[instrument(skip(self))]
     async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
-        eprintln!("--------------{:?}---------------", prompt);
         let max_tokens = self.configuration.max_tokens.generation;
         let generated_text = match &self.configuration.chat.generation {
             Some(messages) => self.do_get_chat(prompt, messages, max_tokens).await?,

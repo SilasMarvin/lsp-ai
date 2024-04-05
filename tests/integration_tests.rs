@@ -7,7 +7,6 @@ use std::{
 // Note if you get an empty response with no error, that typically means
 // the language server died
 fn read_response(stdout: &mut ChildStdout) -> Result<String> {
-    eprintln!("READING RESPONSE");
     let mut content_length = None;
     let mut buf = vec![];
     loop {
@@ -28,7 +27,6 @@ fn read_response(stdout: &mut ChildStdout) -> Result<String> {
             {
                 content_length =
                     Some(String::from_utf8(buf[16..len - 4].to_vec())?.parse::<usize>()?);
-                println!("SETTING CONTENT-LENGTH: {:?}", content_length);
                 buf = vec![];
             }
         }

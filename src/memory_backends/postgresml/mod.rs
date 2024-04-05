@@ -168,8 +168,6 @@ impl MemoryBackend for PostgresML {
             .chars()
             .take(max_characters - code.chars().count())
             .collect();
-        eprintln!("CONTEXT: {}", context);
-        eprintln!("CODE: #########{}######", code);
         Ok(Prompt::new(context, code))
     }
 

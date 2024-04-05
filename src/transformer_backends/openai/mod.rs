@@ -60,7 +60,6 @@ impl OpenAI {
     }
 
     async fn get_completion(&self, prompt: &str, max_tokens: usize) -> anyhow::Result<String> {
-        eprintln!("SENDING REQUEST WITH PROMPT: ******\n{}\n******", prompt);
         let client = reqwest::Client::new();
         let token = self.get_token()?;
         let res: OpenAICompletionsResponse = client
@@ -100,10 +99,6 @@ impl OpenAI {
         messages: Vec<ChatMessage>,
         max_tokens: usize,
     ) -> anyhow::Result<String> {
-        eprintln!(
-            "SENDING CHAT REQUEST WITH PROMPT: ******\n{:?}\n******",
-            messages
-        );
         let client = reqwest::Client::new();
         let token = self.get_token()?;
         let res: OpenAIChatResponse = client
@@ -165,7 +160,6 @@ impl OpenAI {
 impl TransformerBackend for OpenAI {
     #[instrument(skip(self))]
     async fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse> {
-        eprintln!("--------------{:?}---------------", prompt);
         let max_tokens = self.configuration.max_tokens.completion;
         let messages = self
             .configuration
@@ -180,7 +174,6 @@ impl TransformerBackend for OpenAI {
 
     #[instrument(skip(self))]
     async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
-        eprintln!("--------------{:?}---------------", prompt);
         let max_tokens = self.configuration.max_tokens.generation;
         let messages = self
             .configuration

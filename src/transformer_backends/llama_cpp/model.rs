@@ -34,20 +34,8 @@ impl Model {
         let model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
 
         // Load the model
-        eprintln!();
-        eprintln!();
-        eprintln!();
-        eprintln!();
-        eprintln!();
-        eprintln!();
         debug!("Loading model at path: {:?}", model_path);
         let model = LlamaModel::load_from_file(&BACKEND, model_path, &model_params)?;
-        eprintln!();
-        eprintln!("LOADED THE MODEL");
-        eprintln!();
-        eprintln!();
-        eprintln!();
-        eprintln!();
 
         // Get n_ctx if set in kwargs
         // As a default we set it to 2048
