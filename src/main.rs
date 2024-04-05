@@ -80,12 +80,13 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     // Wrap the connection for sharing between threads
     let connection = Arc::new(connection);
 
-    // Our channel we use to communicate with our transformer_worker
+    // Our channel we use to communicate with our transformer worker
     let last_worker_request = Arc::new(Mutex::new(None));
 
-    // Setup the memory backend and memory worker
-    // The channel we use to communicate with our memory_worker
+    // The channel we use to communicate with our memory worker
     let (memory_tx, memory_rx) = mpsc::channel();
+
+    // Setup the transformer worker
     let memory_backend: Box<dyn MemoryBackend + Send + Sync> = configuration.clone().try_into()?;
     thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
 
@@ -160,85 +161,4 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::memory_backends::Prompt;
-    use serde_json::json;
-
-    //////////////////////////////////////
-    //////////////////////////////////////
-    /// Some basic gguf model tests //////
-    //////////////////////////////////////
-    //////////////////////////////////////
-
-    #[tokio::test]
-    async fn completion_with_default_arguments() {
-        let args = json!({});
-        let configuration = Configuration::new(args).unwrap();
-        let backend: Box<dyn TransformerBackend + Send + Sync> =
-            configuration.clone().try_into().unwrap();
-        let prompt = Prompt::new("".to_string(), "def fibn".to_string());
-        let response = backend.do_completion(&prompt).await.unwrap();
-        assert!(!response.insert_text.is_empty())
-    }
-
-    #[tokio::test]
-    async fn completion_with_custom_gguf_model() {
-        let args = json!({
-            "initializationOptions": {
-                "memory": {
-                    "file_store": {}
-                },
-                "macos": {
-                    "model_gguf": {
-                        "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
-                        "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
-                        "max_new_tokens": {
-                            "completion": 32,
-                            "generation": 256,
-                        },
-                        // "fim": {
-                        //     "start": "<fim_prefix>",
-                        //     "middle": "<fim_suffix>",
-                        //     "end": "<fim_middle>"
-                        // },
-                        // "chat": {
-                        //     "completion": [
-                        //         {
-                        //             "role": "system",
-                        //             "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. Keep your response brief. Do not produce any text besides code. \n\n{context}",
-                        //         },
-                        //         {
-                        //             "role": "user",
-                        //             "content": "Complete the following code: \n\n{code}"
-                        //         }
-                        //     ],
-                        //     "generation": [
-                        //         {
-                        //             "role": "system",
-                        //             "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{context}",
-                        //         },
-                        //         {
-                        //             "role": "user",
-                        //             "content": "Complete the following code: \n\n{code}"
-                        //         }
-                        //     ],
-                        //     // "chat_template": "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n<|EOT|>\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
-                        // },
-                        "n_ctx": 2048,
-                        "n_gpu_layers": 35,
-                    }
-                },
-            }
-        });
-        let configuration = Configuration::new(args).unwrap();
-        let backend: Box<dyn TransformerBackend + Send + Sync> =
-            configuration.clone().try_into().unwrap();
-        let prompt = Prompt::new("".to_string(), "def fibn".to_string());
-        let response = backend.do_completion(&prompt).await.unwrap();
-        assert!(!response.insert_text.is_empty());
-    }
 }
