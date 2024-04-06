@@ -19,8 +19,7 @@ tokenizers = "0.14.1"
 parking_lot = "0.12.1"
 once_cell = "1.19.0"
 directories = "5.0.1"
-# llama-cpp-2 = "0.1.31"
-llama-cpp-2 = { git = "https://github.com/SilasMarvin/llama-cpp-rs", branch = "silas-apply-chat-template" }
+llama-cpp-2 = "0.1.47"
 minijinja = { version = "1.0.12", features = ["loader"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = "0.1.40"

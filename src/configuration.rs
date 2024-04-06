@@ -97,6 +97,10 @@ pub struct Model {
     pub name: Option<String>,
 }
 
+const fn llamacpp_max_requests_per_second_default() -> f32 {
+    0.25
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct LLaMACPP {
     // The model to use
@@ -109,6 +113,9 @@ pub struct LLaMACPP {
     pub max_tokens: MaxTokens,
     // Chat args
     pub chat: Option<Chat>,
+    // The maximum requests per second
+    #[serde(default = "llamacpp_max_requests_per_second_default")]
+    pub max_requests_per_second: f32,
     // Kwargs passed to LlamaCPP
     #[serde(flatten)]
     pub kwargs: Kwargs,
@@ -128,28 +135,33 @@ impl Default for LLaMACPP {
             }),
             max_tokens: MaxTokens::default(),
             chat: None,
+            max_requests_per_second: f32::MAX,
             kwargs: Kwargs::default(),
         }
     }
+}
+
+const fn api_max_requests_per_second_default() -> f32 {
+    0.5
 }
 
 const fn openai_top_p_default() -> f32 {
     0.95
 }
 
-const fn openai_presence_penalty() -> f32 {
+const fn openai_presence_penalty_default() -> f32 {
     0.
 }
 
-const fn openai_frequency_penalty() -> f32 {
+const fn openai_frequency_penalty_default() -> f32 {
     0.
 }
 
-const fn openai_temperature() -> f32 {
+const fn openai_temperature_default() -> f32 {
     0.1
 }
 
-const fn openai_max_context() -> usize {
+const fn openai_max_context_default() -> usize {
     DEFAULT_OPENAI_MAX_CONTEXT
 }
 
@@ -162,6 +174,9 @@ pub struct OpenAI {
     pub completions_endpoint: Option<String>,
     // The chat endpoint
     pub chat_endpoint: Option<String>,
+    // The maximum requests per second
+    #[serde(default = "api_max_requests_per_second_default")]
+    pub max_requests_per_second: f32,
     // The model name
     pub model: String,
     // Fill in the middle support
@@ -174,13 +189,13 @@ pub struct OpenAI {
     // Other available args
     #[serde(default = "openai_top_p_default")]
     pub top_p: f32,
-    #[serde(default = "openai_presence_penalty")]
+    #[serde(default = "openai_presence_penalty_default")]
     pub presence_penalty: f32,
-    #[serde(default = "openai_frequency_penalty")]
+    #[serde(default = "openai_frequency_penalty_default")]
     pub frequency_penalty: f32,
-    #[serde(default = "openai_temperature")]
+    #[serde(default = "openai_temperature_default")]
     pub temperature: f32,
-    #[serde(default = "openai_max_context")]
+    #[serde(default = "openai_max_context_default")]
     max_context: usize,
 }
 
@@ -193,6 +208,9 @@ pub struct Anthropic {
     pub completions_endpoint: Option<String>,
     // The chat endpoint
     pub chat_endpoint: Option<String>,
+    // The maximum requests per second
+    #[serde(default = "api_max_requests_per_second_default")]
+    pub max_requests_per_second: f32,
     // The model name
     pub model: String,
     // The maximum number of new tokens to generate
@@ -203,15 +221,17 @@ pub struct Anthropic {
     // System prompt
     #[serde(default = "openai_top_p_default")]
     pub top_p: f32,
-    #[serde(default = "openai_temperature")]
+    #[serde(default = "openai_temperature_default")]
     pub temperature: f32,
-    #[serde(default = "openai_max_context")]
+    #[serde(default = "openai_max_context_default")]
     max_context: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct ValidConfiguration {
+    #[serde(default)]
     pub memory: ValidMemoryBackend,
+    #[serde(default)]
     pub transformer: ValidTransformerBackend,
 }
 
@@ -246,8 +266,16 @@ impl Configuration {
     }
 
     ///////////////////////////////////////
-    // Helpers for the Memory Backend /////
+    // Helpers for the backends ///////////
     ///////////////////////////////////////
+
+    pub fn get_transformer_max_requests_per_second(&self) -> f32 {
+        match &self.config.transformer {
+            ValidTransformerBackend::LLaMACPP(llama_cpp) => llama_cpp.max_requests_per_second,
+            ValidTransformerBackend::OpenAI(openai) => openai.max_requests_per_second,
+            ValidTransformerBackend::Anthropic(anthropic) => anthropic.max_requests_per_second,
+        }
+    }
 
     pub fn get_max_context_length(&self) -> usize {
         match &self.config.transformer {

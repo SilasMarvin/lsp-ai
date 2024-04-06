@@ -3,11 +3,12 @@ use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionList, CompletionParams, CompletionResponse,
     Position, Range, TextEdit,
 };
-use parking_lot::Mutex;
-use std::{sync::Arc, thread};
+use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::sync::oneshot;
-use tracing::error;
+use tracing::{debug, error, instrument};
 
+use crate::configuration::Configuration;
 use crate::custom_requests::generate::{GenerateParams, GenerateResult};
 use crate::custom_requests::generate_stream::GenerateStreamParams;
 use crate::memory_backends::PromptForType;
@@ -53,7 +54,7 @@ impl GenerateStreamRequest {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum WorkerRequest {
     Completion(CompletionRequest),
     Generate(GenerateRequest),
@@ -72,6 +73,7 @@ pub struct DoGenerateStreamResponse {
     pub generated_text: String,
 }
 
+#[instrument(skip(transformer_backend, memory_backend_tx, connection))]
 async fn do_task(
     transformer_backend: Arc<Box<dyn TransformerBackend + Send + Sync>>,
     memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
@@ -100,21 +102,22 @@ async fn do_task(
             }
         }
         WorkerRequest::GenerateStream(_) => {
-            panic!("Streaming is not supported yet")
+            panic!("Streaming is not yet supported")
         }
     };
     connection
         .sender
         .send(Message::Response(response))
-        .expect("Error sending  message");
+        .expect("Error sending response");
     Ok(())
 }
 
 fn do_run(
     transformer_backend: Box<dyn TransformerBackend + Send + Sync>,
     memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
-    last_worker_request: Arc<Mutex<Option<WorkerRequest>>>,
+    transformer_rx: std::sync::mpsc::Receiver<WorkerRequest>,
     connection: Arc<Connection>,
+    config: Configuration,
 ) -> anyhow::Result<()> {
     let transformer_backend = Arc::new(transformer_backend);
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -122,43 +125,55 @@ fn do_run(
         .enable_all()
         .build()?;
 
+    // This logic is not perfect, but works well enough for now
+    let max_requests_per_second = config.get_transformer_max_requests_per_second();
+    let mut first_request = SystemTime::now();
+    let mut requests_in_last_5_seconds = 0.;
+
     loop {
-        let option_worker_request: Option<WorkerRequest> = {
-            let mut completion_request = last_worker_request.lock();
-            std::mem::take(&mut *completion_request)
-        };
-        if let Some(request) = option_worker_request {
-            let thread_transformer_backend = transformer_backend.clone();
-            let thread_memory_backend_tx = memory_backend_tx.clone();
-            let thread_connection = connection.clone();
-            runtime.spawn(async move {
-                if let Err(e) = do_task(
-                    thread_transformer_backend,
-                    thread_memory_backend_tx,
-                    request,
-                    thread_connection,
-                )
-                .await
-                {
-                    error!("error in transformer worker task: {e}")
-                }
-            });
+        let request = transformer_rx.recv()?;
+
+        if first_request.elapsed()?.as_secs() > 5 {
+            first_request = SystemTime::now();
+            requests_in_last_5_seconds = 0.;
         }
-        thread::sleep(std::time::Duration::from_millis(5));
+        if requests_in_last_5_seconds / 5. > max_requests_per_second {
+            debug!("rate limiting transform request");
+            continue;
+        }
+        requests_in_last_5_seconds += 1.;
+
+        let thread_transformer_backend = transformer_backend.clone();
+        let thread_memory_backend_tx = memory_backend_tx.clone();
+        let thread_connection = connection.clone();
+        runtime.spawn(async move {
+            if let Err(e) = do_task(
+                thread_transformer_backend,
+                thread_memory_backend_tx,
+                request,
+                thread_connection,
+            )
+            .await
+            {
+                error!("transformer worker task: {e}")
+            }
+        });
     }
 }
 
 pub fn run(
     transformer_backend: Box<dyn TransformerBackend + Send + Sync>,
-    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
-    last_worker_request: Arc<Mutex<Option<WorkerRequest>>>,
+    memory_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
+    transformer_rx: std::sync::mpsc::Receiver<WorkerRequest>,
     connection: Arc<Connection>,
+    config: Configuration,
 ) {
     if let Err(e) = do_run(
         transformer_backend,
-        memory_backend_tx,
-        last_worker_request,
+        memory_tx,
+        transformer_rx,
         connection,
+        config,
     ) {
         error!("error in transformer worker: {e}")
     }

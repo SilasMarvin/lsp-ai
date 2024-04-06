@@ -5,7 +5,6 @@ use lsp_types::{
     request::Completion, CompletionOptions, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     RenameFilesParams, ServerCapabilities, TextDocumentSyncKind,
 };
-use parking_lot::Mutex;
 use std::{
     sync::{mpsc, Arc},
     thread,
@@ -75,33 +74,35 @@ fn main() -> Result<()> {
 
 fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     // Build our configuration
-    let configuration = Configuration::new(args)?;
+    let config = Configuration::new(args)?;
 
     // Wrap the connection for sharing between threads
     let connection = Arc::new(connection);
 
     // Our channel we use to communicate with our transformer worker
-    let last_worker_request = Arc::new(Mutex::new(None));
+    // let last_worker_request = Arc::new(Mutex::new(None));
+    let (transformer_tx, transformer_rx) = mpsc::channel();
 
     // The channel we use to communicate with our memory worker
     let (memory_tx, memory_rx) = mpsc::channel();
 
     // Setup the transformer worker
-    let memory_backend: Box<dyn MemoryBackend + Send + Sync> = configuration.clone().try_into()?;
+    let memory_backend: Box<dyn MemoryBackend + Send + Sync> = config.clone().try_into()?;
     thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
 
     // Setup our transformer worker
     let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
-        configuration.clone().try_into()?;
-    let thread_last_worker_request = last_worker_request.clone();
+        config.clone().try_into()?;
     let thread_connection = connection.clone();
     let thread_memory_tx = memory_tx.clone();
+    let thread_config = config.clone();
     thread::spawn(move || {
         transformer_worker::run(
             transformer_backend,
             thread_memory_tx,
-            thread_last_worker_request,
+            transformer_rx,
             thread_connection,
+            thread_config,
         )
     });
 
@@ -111,33 +112,28 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
                 if connection.handle_shutdown(&req)? {
                     return Ok(());
                 }
-                // Right now each if / else basically does the same thing,
-                // but this may change soon so it is worth making it a little
-                // more verbose than it needs to be now
                 if request_is::<Completion>(&req) {
                     match cast::<Completion>(req) {
                         Ok((id, params)) => {
-                            let mut lcr = last_worker_request.lock();
                             let completion_request = CompletionRequest::new(id, params);
-                            *lcr = Some(WorkerRequest::Completion(completion_request));
+                            transformer_tx.send(WorkerRequest::Completion(completion_request))?;
                         }
                         Err(err) => error!("{err:?}"),
                     }
                 } else if request_is::<Generate>(&req) {
                     match cast::<Generate>(req) {
                         Ok((id, params)) => {
-                            let mut lcr = last_worker_request.lock();
-                            let completion_request = GenerateRequest::new(id, params);
-                            *lcr = Some(WorkerRequest::Generate(completion_request));
+                            let generate_request = GenerateRequest::new(id, params);
+                            transformer_tx.send(WorkerRequest::Generate(generate_request))?;
                         }
                         Err(err) => error!("{err:?}"),
                     }
                 } else if request_is::<GenerateStream>(&req) {
                     match cast::<GenerateStream>(req) {
                         Ok((id, params)) => {
-                            let mut lcr = last_worker_request.lock();
-                            let completion_request = GenerateStreamRequest::new(id, params);
-                            *lcr = Some(WorkerRequest::GenerateStream(completion_request));
+                            let generate_stream_request = GenerateStreamRequest::new(id, params);
+                            transformer_tx
+                                .send(WorkerRequest::GenerateStream(generate_stream_request))?;
                         }
                         Err(err) => error!("{err:?}"),
                     }
