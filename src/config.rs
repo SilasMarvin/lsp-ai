@@ -228,7 +228,7 @@ pub struct Anthropic {
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
-pub struct ValidConfiguration {
+pub struct ValidConfig {
     #[serde(default)]
     pub memory: ValidMemoryBackend,
     #[serde(default)]
@@ -243,12 +243,12 @@ pub struct ValidClientParams {
 }
 
 #[derive(Clone, Debug)]
-pub struct Configuration {
-    pub config: ValidConfiguration,
+pub struct Config {
+    pub config: ValidConfig,
     _client_params: ValidClientParams,
 }
 
-impl Configuration {
+impl Config {
     pub fn new(mut args: Value) -> Result<Self> {
         let configuration_args = args
             .as_object_mut()
@@ -256,7 +256,7 @@ impl Configuration {
             .remove("initializationOptions");
         let valid_args = match configuration_args {
             Some(configuration_args) => serde_json::from_value(configuration_args)?,
-            None => ValidConfiguration::default(),
+            None => ValidConfig::default(),
         };
         let client_params: ValidClientParams = serde_json::from_value(args)?;
         Ok(Self {
@@ -364,7 +364,7 @@ mod test {
                 }
             }
         });
-        Configuration::new(args).unwrap();
+        Config::new(args).unwrap();
     }
 
     #[test]
@@ -391,6 +391,6 @@ mod test {
                 }
             }
         });
-        Configuration::new(args).unwrap();
+        Config::new(args).unwrap();
     }
 }

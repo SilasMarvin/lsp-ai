@@ -3,7 +3,7 @@ use hf_hub::api::sync::ApiBuilder;
 use tracing::instrument;
 
 use crate::{
-    configuration::{self},
+    config::{self},
     memory_backends::Prompt,
     template::apply_chat_template,
     transformer_worker::{
@@ -19,12 +19,12 @@ use super::TransformerBackend;
 
 pub struct LLaMACPP {
     model: Model,
-    configuration: configuration::LLaMACPP,
+    configuration: config::LLaMACPP,
 }
 
 impl LLaMACPP {
     #[instrument]
-    pub fn new(configuration: configuration::LLaMACPP) -> anyhow::Result<Self> {
+    pub fn new(configuration: config::LLaMACPP) -> anyhow::Result<Self> {
         let api = ApiBuilder::new().with_progress(true).build()?;
         let name = configuration
             .model
@@ -99,7 +99,7 @@ mod test {
 
     #[tokio::test]
     async fn llama_cpp_do_completion() -> anyhow::Result<()> {
-        let configuration: configuration::LLaMACPP = serde_json::from_value(json!({
+        let configuration: config::LLaMACPP = serde_json::from_value(json!({
             "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
             "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
             "max_new_tokens": {

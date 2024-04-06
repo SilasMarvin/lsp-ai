@@ -1,6 +1,6 @@
 use lsp_server::ResponseError;
 
-use crate::{configuration::ChatMessage, memory_backends::Prompt};
+use crate::{config::ChatMessage, memory_backends::Prompt};
 
 pub trait ToResponseError {
     fn to_response_error(&self, code: i32) -> ResponseError;

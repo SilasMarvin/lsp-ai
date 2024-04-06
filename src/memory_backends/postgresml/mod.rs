@@ -11,14 +11,14 @@ use tokio::time;
 use tracing::instrument;
 
 use crate::{
-    configuration::{self, Configuration},
+    config::{self, Config},
     utils::tokens_to_estimated_characters,
 };
 
 use super::{file_store::FileStore, MemoryBackend, Prompt, PromptForType};
 
 pub struct PostgresML {
-    configuration: Configuration,
+    configuration: Config,
     file_store: FileStore,
     collection: Collection,
     pipeline: Pipeline,
@@ -28,8 +28,8 @@ pub struct PostgresML {
 
 impl PostgresML {
     pub fn new(
-        postgresml_config: configuration::PostgresML,
-        configuration: Configuration,
+        postgresml_config: config::PostgresML,
+        configuration: Config,
     ) -> anyhow::Result<Self> {
         let file_store = FileStore::new_without_crawl(configuration.clone());
         let database_url = if let Some(database_url) = postgresml_config.database_url {

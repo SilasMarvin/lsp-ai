@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use tracing::instrument;
 
 use crate::{
-    configuration::{self, ChatMessage},
+    config::{self, ChatMessage},
     memory_backends::Prompt,
     transformer_worker::{
         DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
@@ -15,7 +15,7 @@ use crate::{
 use super::TransformerBackend;
 
 pub struct Anthropic {
-    configuration: configuration::Anthropic,
+    configuration: config::Anthropic,
 }
 
 #[derive(Deserialize)]
@@ -31,7 +31,7 @@ struct AnthropicChatResponse {
 
 impl Anthropic {
     #[instrument]
-    pub fn new(configuration: configuration::Anthropic) -> Self {
+    pub fn new(configuration: config::Anthropic) -> Self {
         Self { configuration }
     }
 
@@ -139,7 +139,7 @@ mod test {
 
     #[tokio::test]
     async fn anthropic_chat_do_completion() -> anyhow::Result<()> {
-        let configuration: configuration::Anthropic = serde_json::from_value(json!({
+        let configuration: config::Anthropic = serde_json::from_value(json!({
             "chat_endpoint": "https://api.anthropic.com/v1/messages",
             "model": "claude-3-haiku-20240307",
             "auth_token_env_var_name": "ANTHROPIC_API_KEY",
@@ -170,7 +170,7 @@ mod test {
 
     #[tokio::test]
     async fn anthropic_chat_do_generate() -> anyhow::Result<()> {
-        let configuration: configuration::Anthropic = serde_json::from_value(json!({
+        let configuration: config::Anthropic = serde_json::from_value(json!({
             "chat_endpoint": "https://api.anthropic.com/v1/messages",
             "model": "claude-3-haiku-20240307",
             "auth_token_env_var_name": "ANTHROPIC_API_KEY",

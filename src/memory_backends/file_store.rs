@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use tracing::instrument;
 
 use crate::{
-    configuration::{self, Configuration},
+    config::{self, Config},
     utils::tokens_to_estimated_characters,
 };
 
@@ -15,13 +15,13 @@ use super::{MemoryBackend, Prompt, PromptForType};
 
 pub struct FileStore {
     _crawl: bool,
-    configuration: Configuration,
+    configuration: Config,
     file_map: Mutex<HashMap<String, Rope>>,
     accessed_files: Mutex<IndexSet<String>>,
 }
 
 impl FileStore {
-    pub fn new(file_store_config: configuration::FileStore, configuration: Configuration) -> Self {
+    pub fn new(file_store_config: config::FileStore, configuration: Config) -> Self {
         Self {
             _crawl: file_store_config.crawl,
             configuration,
@@ -30,7 +30,7 @@ impl FileStore {
         }
     }
 
-    pub fn new_without_crawl(configuration: Configuration) -> Self {
+    pub fn new_without_crawl(configuration: Config) -> Self {
         Self {
             _crawl: false,
             configuration,
@@ -122,11 +122,8 @@ impl FileStore {
                 .unwrap_or(false),
         };
 
-        // We only want to do FIM if the user has enabled it and the user has not enabled chat
         Ok(match (is_chat_enabled, self.configuration.get_fim()) {
-            r @ (true, _) | r @ (false, Some(_))
-                if is_chat_enabled || rope.len_chars() != cursor_index =>
-            {
+            r @ (true, _) | r @ (false, Some(_)) if rope.len_chars() != cursor_index => {
                 let max_length = tokens_to_estimated_characters(max_context_length);
                 let start = cursor_index.saturating_sub(max_length / 2);
                 let end = rope

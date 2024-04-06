@@ -12,7 +12,7 @@ use std::{
 use tracing::error;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-mod configuration;
+mod config;
 mod custom_requests;
 mod memory_backends;
 mod memory_worker;
@@ -21,7 +21,7 @@ mod transformer_backends;
 mod transformer_worker;
 mod utils;
 
-use configuration::Configuration;
+use config::Config;
 use custom_requests::generate::Generate;
 use memory_backends::MemoryBackend;
 use transformer_backends::TransformerBackend;
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
 
 fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     // Build our configuration
-    let config = Configuration::new(args)?;
+    let config = Config::new(args)?;
 
     // Wrap the connection for sharing between threads
     let connection = Arc::new(connection);

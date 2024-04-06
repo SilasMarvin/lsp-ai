@@ -3,7 +3,7 @@ use lsp_types::{
     TextDocumentPositionParams,
 };
 
-use crate::configuration::{Configuration, ValidMemoryBackend};
+use crate::config::{Config, ValidMemoryBackend};
 
 pub mod file_store;
 mod postgresml;
@@ -48,10 +48,10 @@ pub trait MemoryBackend {
     ) -> anyhow::Result<String>;
 }
 
-impl TryFrom<Configuration> for Box<dyn MemoryBackend + Send + Sync> {
+impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
     type Error = anyhow::Error;
 
-    fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {
+    fn try_from(configuration: Config) -> Result<Self, Self::Error> {
         match configuration.config.memory.clone() {
             ValidMemoryBackend::FileStore(file_store_config) => Ok(Box::new(
                 file_store::FileStore::new(file_store_config, configuration),

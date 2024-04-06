@@ -2,7 +2,7 @@ use minijinja::{context, Environment, ErrorKind};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
-use crate::configuration::ChatMessage;
+use crate::config::ChatMessage;
 
 static MINININJA_ENVIRONMENT: Lazy<Mutex<Environment>> =
     Lazy::new(|| Mutex::new(Environment::new()));

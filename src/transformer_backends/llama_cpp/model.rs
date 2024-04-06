@@ -11,7 +11,7 @@ use once_cell::sync::Lazy;
 use std::{num::NonZeroU32, path::PathBuf, time::Duration};
 use tracing::{debug, info, instrument};
 
-use crate::configuration::{ChatMessage, Kwargs};
+use crate::config::{ChatMessage, Kwargs};
 
 static BACKEND: Lazy<LlamaBackend> = Lazy::new(|| LlamaBackend::init().unwrap());
 

@@ -1,5 +1,5 @@
 use crate::{
-    configuration::{Configuration, ValidTransformerBackend},
+    config::{Config, ValidTransformerBackend},
     memory_backends::Prompt,
     transformer_worker::{
         DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
@@ -20,10 +20,10 @@ pub trait TransformerBackend {
     ) -> anyhow::Result<DoGenerateStreamResponse>;
 }
 
-impl TryFrom<Configuration> for Box<dyn TransformerBackend + Send + Sync> {
+impl TryFrom<Config> for Box<dyn TransformerBackend + Send + Sync> {
     type Error = anyhow::Error;
 
-    fn try_from(configuration: Configuration) -> Result<Self, Self::Error> {
+    fn try_from(configuration: Config) -> Result<Self, Self::Error> {
         match configuration.config.transformer {
             ValidTransformerBackend::LLaMACPP(model_gguf) => {
                 Ok(Box::new(llama_cpp::LLaMACPP::new(model_gguf)?))

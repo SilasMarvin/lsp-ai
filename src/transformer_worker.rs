@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use tokio::sync::oneshot;
 use tracing::{debug, error, instrument};
 
-use crate::configuration::Configuration;
+use crate::config::Config;
 use crate::custom_requests::generate::{GenerateParams, GenerateResult};
 use crate::custom_requests::generate_stream::GenerateStreamParams;
 use crate::memory_backends::PromptForType;
@@ -117,7 +117,7 @@ fn do_run(
     memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
     transformer_rx: std::sync::mpsc::Receiver<WorkerRequest>,
     connection: Arc<Connection>,
-    config: Configuration,
+    config: Config,
 ) -> anyhow::Result<()> {
     let transformer_backend = Arc::new(transformer_backend);
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -166,7 +166,7 @@ pub fn run(
     memory_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
     transformer_rx: std::sync::mpsc::Receiver<WorkerRequest>,
     connection: Arc<Connection>,
-    config: Configuration,
+    config: Config,
 ) {
     if let Err(e) = do_run(
         transformer_backend,
