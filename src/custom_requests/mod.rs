@@ -1,2 +1,2 @@
-pub mod generate;
-pub mod generate_stream;
+pub mod generation;
+pub mod generation_stream;

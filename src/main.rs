@@ -22,13 +22,14 @@ mod transformer_worker;
 mod utils;
 
 use config::Config;
-use custom_requests::generate::Generate;
+use custom_requests::generation::Generation;
 use memory_backends::MemoryBackend;
 use transformer_backends::TransformerBackend;
-use transformer_worker::{CompletionRequest, GenerateRequest, WorkerRequest};
+use transformer_worker::{CompletionRequest, GenerationRequest, WorkerRequest};
 
 use crate::{
-    custom_requests::generate_stream::GenerateStream, transformer_worker::GenerateStreamRequest,
+    custom_requests::generation_stream::GenerationStream,
+    transformer_worker::GenerationStreamRequest,
 };
 
 fn notification_is<N: lsp_types::notification::Notification>(notification: &Notification) -> bool {
@@ -120,25 +121,26 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
                         }
                         Err(err) => error!("{err:?}"),
                     }
-                } else if request_is::<Generate>(&req) {
-                    match cast::<Generate>(req) {
+                } else if request_is::<Generation>(&req) {
+                    match cast::<Generation>(req) {
                         Ok((id, params)) => {
-                            let generate_request = GenerateRequest::new(id, params);
-                            transformer_tx.send(WorkerRequest::Generate(generate_request))?;
+                            let generation_request = GenerationRequest::new(id, params);
+                            transformer_tx.send(WorkerRequest::Generation(generation_request))?;
                         }
                         Err(err) => error!("{err:?}"),
                     }
-                } else if request_is::<GenerateStream>(&req) {
-                    match cast::<GenerateStream>(req) {
+                } else if request_is::<GenerationStream>(&req) {
+                    match cast::<GenerationStream>(req) {
                         Ok((id, params)) => {
-                            let generate_stream_request = GenerateStreamRequest::new(id, params);
+                            let generation_stream_request =
+                                GenerationStreamRequest::new(id, params);
                             transformer_tx
-                                .send(WorkerRequest::GenerateStream(generate_stream_request))?;
+                                .send(WorkerRequest::GenerationStream(generation_stream_request))?;
                         }
                         Err(err) => error!("{err:?}"),
                     }
                 } else {
-                    error!("lsp-ai currently only supports textDocument/completion, textDocument/generate and textDocument/generateStream")
+                    error!("lsp-ai currently only supports textDocument/completion, textDocument/generation and textDocument/generationStream")
                 }
             }
             Message::Notification(not) => {

@@ -2,7 +2,8 @@ use crate::{
     config::{Config, ValidTransformerBackend},
     memory_backends::Prompt,
     transformer_worker::{
-        DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
+        DoCompletionResponse, DoGenerationResponse, DoGenerationStreamResponse,
+        GenerationStreamRequest,
     },
 };
 
@@ -13,11 +14,11 @@ mod openai;
 #[async_trait::async_trait]
 pub trait TransformerBackend {
     async fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse>;
-    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse>;
+    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerationResponse>;
     async fn do_generate_stream(
         &self,
-        request: &GenerateStreamRequest,
-    ) -> anyhow::Result<DoGenerateStreamResponse>;
+        request: &GenerationStreamRequest,
+    ) -> anyhow::Result<DoGenerationStreamResponse>;
 }
 
 impl TryFrom<Config> for Box<dyn TransformerBackend + Send + Sync> {

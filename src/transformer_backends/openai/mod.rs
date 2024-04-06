@@ -10,7 +10,8 @@ use crate::{
     config::{self, ChatMessage},
     memory_backends::Prompt,
     transformer_worker::{
-        DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
+        DoCompletionResponse, DoGenerationResponse, DoGenerationStreamResponse,
+        GenerationStreamRequest,
     },
     utils::{format_chat_messages, format_context_code},
 };
@@ -173,7 +174,7 @@ impl TransformerBackend for OpenAI {
     }
 
     #[instrument(skip(self))]
-    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
+    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerationResponse> {
         let max_tokens = self.configuration.max_tokens.generation;
         let messages = self
             .configuration
@@ -183,14 +184,14 @@ impl TransformerBackend for OpenAI {
         let generated_text = self
             .do_chat_completion(prompt, messages, max_tokens)
             .await?;
-        Ok(DoGenerateResponse { generated_text })
+        Ok(DoGenerationResponse { generated_text })
     }
 
     #[instrument(skip(self))]
     async fn do_generate_stream(
         &self,
-        request: &GenerateStreamRequest,
-    ) -> anyhow::Result<DoGenerateStreamResponse> {
+        request: &GenerationStreamRequest,
+    ) -> anyhow::Result<DoGenerationStreamResponse> {
         unimplemented!()
     }
 }

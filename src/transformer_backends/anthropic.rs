@@ -7,7 +7,8 @@ use crate::{
     config::{self, ChatMessage},
     memory_backends::Prompt,
     transformer_worker::{
-        DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
+        DoCompletionResponse, DoGenerationResponse, DoGenerationStreamResponse,
+        GenerationStreamRequest,
     },
     utils::format_chat_messages,
 };
@@ -113,7 +114,7 @@ impl TransformerBackend for Anthropic {
     }
 
     #[instrument(skip(self))]
-    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
+    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerationResponse> {
         let max_tokens = self.configuration.max_tokens.generation;
         let generated_text = match &self.configuration.chat.generation {
             Some(messages) => self.do_get_chat(prompt, messages, max_tokens).await?,
@@ -121,14 +122,14 @@ impl TransformerBackend for Anthropic {
                 anyhow::bail!("Please set `transformer->anthropic->chat->generation` messages")
             }
         };
-        Ok(DoGenerateResponse { generated_text })
+        Ok(DoGenerationResponse { generated_text })
     }
 
     #[instrument(skip(self))]
     async fn do_generate_stream(
         &self,
-        request: &GenerateStreamRequest,
-    ) -> anyhow::Result<DoGenerateStreamResponse> {
+        request: &GenerationStreamRequest,
+    ) -> anyhow::Result<DoGenerationStreamResponse> {
         unimplemented!()
     }
 }

@@ -7,7 +7,8 @@ use crate::{
     memory_backends::Prompt,
     template::apply_chat_template,
     transformer_worker::{
-        DoCompletionResponse, DoGenerateResponse, DoGenerateStreamResponse, GenerateStreamRequest,
+        DoCompletionResponse, DoGenerationResponse, DoGenerationStreamResponse,
+        GenerationStreamRequest,
     },
     utils::format_chat_messages,
 };
@@ -75,19 +76,19 @@ impl TransformerBackend for LLaMACPP {
     }
 
     #[instrument(skip(self))]
-    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerateResponse> {
+    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerationResponse> {
         let prompt = self.get_prompt_string(prompt)?;
         let max_new_tokens = self.configuration.max_tokens.completion;
         self.model
             .complete(&prompt, max_new_tokens)
-            .map(|generated_text| DoGenerateResponse { generated_text })
+            .map(|generated_text| DoGenerationResponse { generated_text })
     }
 
     #[instrument(skip(self))]
     async fn do_generate_stream(
         &self,
-        _request: &GenerateStreamRequest,
-    ) -> anyhow::Result<DoGenerateStreamResponse> {
+        _request: &GenerationStreamRequest,
+    ) -> anyhow::Result<DoGenerationStreamResponse> {
         unimplemented!()
     }
 }

@@ -9,8 +9,8 @@ use tokio::sync::oneshot;
 use tracing::{debug, error, instrument};
 
 use crate::config::Config;
-use crate::custom_requests::generate::{GenerateParams, GenerateResult};
-use crate::custom_requests::generate_stream::GenerateStreamParams;
+use crate::custom_requests::generation::{GenerateResult, GenerationParams};
+use crate::custom_requests::generation_stream::GenerationStreamParams;
 use crate::memory_backends::PromptForType;
 use crate::memory_worker::{self, FilterRequest, PromptRequest};
 use crate::transformer_backends::TransformerBackend;
@@ -29,13 +29,13 @@ impl CompletionRequest {
 }
 
 #[derive(Clone, Debug)]
-pub struct GenerateRequest {
+pub struct GenerationRequest {
     id: RequestId,
-    params: GenerateParams,
+    params: GenerationParams,
 }
 
-impl GenerateRequest {
-    pub fn new(id: RequestId, params: GenerateParams) -> Self {
+impl GenerationRequest {
+    pub fn new(id: RequestId, params: GenerationParams) -> Self {
         Self { id, params }
     }
 }
@@ -43,13 +43,13 @@ impl GenerateRequest {
 // The generate stream is not yet ready but we don't want to remove it
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
-pub struct GenerateStreamRequest {
+pub struct GenerationStreamRequest {
     id: RequestId,
-    params: GenerateStreamParams,
+    params: GenerationStreamParams,
 }
 
-impl GenerateStreamRequest {
-    pub fn new(id: RequestId, params: GenerateStreamParams) -> Self {
+impl GenerationStreamRequest {
+    pub fn new(id: RequestId, params: GenerationStreamParams) -> Self {
         Self { id, params }
     }
 }
@@ -57,19 +57,19 @@ impl GenerateStreamRequest {
 #[derive(Clone, Debug)]
 pub enum WorkerRequest {
     Completion(CompletionRequest),
-    Generate(GenerateRequest),
-    GenerateStream(GenerateStreamRequest),
+    Generation(GenerationRequest),
+    GenerationStream(GenerationStreamRequest),
 }
 
 pub struct DoCompletionResponse {
     pub insert_text: String,
 }
 
-pub struct DoGenerateResponse {
+pub struct DoGenerationResponse {
     pub generated_text: String,
 }
 
-pub struct DoGenerateStreamResponse {
+pub struct DoGenerationStreamResponse {
     pub generated_text: String,
 }
 
@@ -91,7 +91,7 @@ async fn do_task(
                 },
             }
         }
-        WorkerRequest::Generate(request) => {
+        WorkerRequest::Generation(request) => {
             match do_generate(transformer_backend, memory_backend_tx, &request).await {
                 Ok(r) => r,
                 Err(e) => Response {
@@ -101,7 +101,7 @@ async fn do_task(
                 },
             }
         }
-        WorkerRequest::GenerateStream(_) => {
+        WorkerRequest::GenerationStream(_) => {
             panic!("Streaming is not yet supported")
         }
     };
@@ -235,7 +235,7 @@ async fn do_completion(
 async fn do_generate(
     transformer_backend: Arc<Box<dyn TransformerBackend + Send + Sync>>,
     memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
-    request: &GenerateRequest,
+    request: &GenerationRequest,
 ) -> anyhow::Result<Response> {
     let (tx, rx) = oneshot::channel();
     memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
