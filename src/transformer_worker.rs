@@ -3,10 +3,11 @@ use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionList, CompletionParams, CompletionResponse,
     Position, Range, TextEdit,
 };
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use tokio::sync::oneshot;
-use tracing::{debug, error, instrument};
+use tracing::{error, instrument};
 
 use crate::config::Config;
 use crate::custom_requests::generation::{GenerateResult, GenerationParams};
@@ -125,39 +126,45 @@ fn do_run(
         .enable_all()
         .build()?;
 
-    // This logic is not perfect, but works well enough for now
     let max_requests_per_second = config.get_transformer_max_requests_per_second();
-    let mut first_request = SystemTime::now();
-    let mut requests_in_last_5_seconds = 0.;
+    let mut last_request_time = SystemTime::now();
 
+    let mut last_request = None;
     loop {
-        let request = transformer_rx.recv()?;
-
-        if first_request.elapsed()?.as_secs() > 5 {
-            first_request = SystemTime::now();
-            requests_in_last_5_seconds = 0.;
+        // We want to rate limit without dropping the last rate limited request
+        let request = transformer_rx.recv_timeout(Duration::from_millis(5));
+        match request {
+            Ok(request) => last_request = Some(request),
+            Err(RecvTimeoutError::Disconnected) => anyhow::bail!("channel disconnected"),
+            _ => {}
         }
-        if requests_in_last_5_seconds / 5. > max_requests_per_second {
-            debug!("rate limiting transform request");
+
+        if SystemTime::now()
+            .duration_since(last_request_time)?
+            .as_secs_f32()
+            < 1. / max_requests_per_second
+        {
             continue;
         }
-        requests_in_last_5_seconds += 1.;
 
-        let thread_transformer_backend = transformer_backend.clone();
-        let thread_memory_backend_tx = memory_backend_tx.clone();
-        let thread_connection = connection.clone();
-        runtime.spawn(async move {
-            if let Err(e) = do_task(
-                thread_transformer_backend,
-                thread_memory_backend_tx,
-                request,
-                thread_connection,
-            )
-            .await
-            {
-                error!("transformer worker task: {e}")
-            }
-        });
+        if let Some(request) = last_request.take() {
+            last_request_time = SystemTime::now();
+            let thread_transformer_backend = transformer_backend.clone();
+            let thread_memory_backend_tx = memory_backend_tx.clone();
+            let thread_connection = connection.clone();
+            runtime.spawn(async move {
+                if let Err(e) = do_task(
+                    thread_transformer_backend,
+                    thread_memory_backend_tx,
+                    request,
+                    thread_connection,
+                )
+                .await
+                {
+                    error!("transformer worker task: {e}")
+                }
+            });
+        }
     }
 }
 
