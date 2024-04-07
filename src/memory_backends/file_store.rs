@@ -178,10 +178,12 @@ impl MemoryBackend for FileStore {
             .get(position.text_document.uri.as_str())
             .context("Error file not found")?
             .clone();
-        Ok(rope
+        let line = rope
             .get_line(position.position.line as usize)
             .context("Error getting filter_text")?
-            .to_string())
+            .slice(0..position.position.character as usize)
+            .to_string();
+        Ok(line)
     }
 
     #[instrument(skip(self))]
