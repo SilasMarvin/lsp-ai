@@ -97,10 +97,6 @@ pub struct Model {
     pub name: Option<String>,
 }
 
-const fn llamacpp_max_requests_per_second_default() -> f32 {
-    0.25
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct LLaMACPP {
     // The model to use
@@ -113,9 +109,6 @@ pub struct LLaMACPP {
     pub max_tokens: MaxTokens,
     // Chat args
     pub chat: Option<Chat>,
-    // The maximum requests per second
-    #[serde(default = "llamacpp_max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
     // Kwargs passed to LlamaCPP
     #[serde(flatten)]
     pub kwargs: Kwargs,
@@ -135,7 +128,6 @@ impl Default for LLaMACPP {
             }),
             max_tokens: MaxTokens::default(),
             chat: None,
-            max_requests_per_second: f32::MAX,
             kwargs: Kwargs::default(),
         }
     }
@@ -271,7 +263,7 @@ impl Config {
 
     pub fn get_transformer_max_requests_per_second(&self) -> f32 {
         match &self.config.transformer {
-            ValidTransformerBackend::LLaMACPP(llama_cpp) => llama_cpp.max_requests_per_second,
+            ValidTransformerBackend::LLaMACPP(_) => f32::MAX,
             ValidTransformerBackend::OpenAI(openai) => openai.max_requests_per_second,
             ValidTransformerBackend::Anthropic(anthropic) => anthropic.max_requests_per_second,
         }
