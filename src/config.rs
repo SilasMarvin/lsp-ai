@@ -6,8 +6,8 @@ use std::collections::HashMap;
 const DEFAULT_LLAMA_CPP_N_CTX: usize = 1024;
 const DEFAULT_OPENAI_MAX_CONTEXT: usize = 2048;
 
-const DEFAULT_MAX_COMPLETION_TOKENS: usize = 32;
-const DEFAULT_MAX_GENERATION_TOKENS: usize = 256;
+const DEFAULT_MAX_COMPLETION_TOKENS: usize = 16;
+const DEFAULT_MAX_GENERATION_TOKENS: usize = 64;
 
 pub type Kwargs = HashMap<String, Value>;
 
@@ -263,7 +263,7 @@ impl Config {
 
     pub fn get_transformer_max_requests_per_second(&self) -> f32 {
         match &self.config.transformer {
-            ValidTransformerBackend::LLaMACPP(_) => f32::MAX,
+            ValidTransformerBackend::LLaMACPP(_) => 1.,
             ValidTransformerBackend::OpenAI(openai) => openai.max_requests_per_second,
             ValidTransformerBackend::Anthropic(anthropic) => anthropic.max_requests_per_second,
         }

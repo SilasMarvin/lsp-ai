@@ -33,7 +33,7 @@ export function activate(context: vscode.ExtensionContext) {
   client.start();
 
   // Register generate function
-  const generateCommand = 'lsp-ai.generate';
+  const generateCommand = 'lsp-ai.generation';
   const generateCommandHandler = (editor: vscode.TextEditor) => {
     let params = {
       textDocument: {
@@ -41,7 +41,7 @@ export function activate(context: vscode.ExtensionContext) {
       },
       position: editor.selection.active
     };
-    client.sendRequest("textDocument/generate", params).then(result => {
+    client.sendRequest("textDocument/generation", params).then(result => {
       editor.edit((edit) => {
         edit.insert(editor.selection.active, result["generatedText"]);
       });
@@ -50,29 +50,6 @@ export function activate(context: vscode.ExtensionContext) {
     });
   };
   context.subscriptions.push(vscode.commands.registerTextEditorCommand(generateCommand, generateCommandHandler));
-
-  // Register functions
-  // This function is not ready to go
-  // const generateStreamCommand = 'lsp-ai.generateStream';
-  // const generateStreamCommandHandler = (editor: vscode.TextEditor) => {
-  //   let params = {
-  //     textDocument: {
-  //       uri: editor.document.uri.toString(),
-  //     },
-  //     position: editor.selection.active,
-  //     partialResultToken: uuidv4()
-  //   };
-  //   console.log("PARAMS: ", params);
-  //   client.sendRequest("textDocument/generateStream", params).then(result => {
-  //     console.log("RECEIVED RESULT", result);
-  //     editor.edit((edit) => {
-  //       edit.insert(editor.selection.active, result["generatedText"]);
-  //     });
-  //   }).catch(error => {
-  //     console.error("Error making generate request", error);
-  //   });
-  // };
-  // context.subscriptions.push(vscode.commands.registerTextEditorCommand(generateStreamCommand, generateStreamCommandHandler));
 
   vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' },
     {
@@ -83,7 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
           },
           position: position
         };
-        const result = await client.sendRequest("textDocument/generate", params);
+        const result = await client.sendRequest("textDocument/generation", params);
         return [new vscode.InlineCompletionItem(result["generatedText"])];
       }
     }

@@ -17,12 +17,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "lsp-ai.generate",
-        "title": "LSP AI Generate"
-      },
-      {
-        "command": "lsp-ai.generateStream",
-        "title": "LSP AI Generate Stream"
+        "command": "lsp-ai.generation",
+        "title": "LSP-AI Generation"
       }
     ],
     "configuration": {

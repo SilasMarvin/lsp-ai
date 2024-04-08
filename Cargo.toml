@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.75"
 lsp-server = "0.7.6"
-# lsp-server = { path = "../rust-analyzer/lib/lsp-server" }
 lsp-types = "0.95.0"
 ropey = "1.6.1"
 serde = "1.0.190"
