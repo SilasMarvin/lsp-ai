@@ -15,25 +15,25 @@ use super::{MemoryBackend, Prompt, PromptForType};
 
 pub struct FileStore {
     _crawl: bool,
-    configuration: Config,
+    config: Config,
     file_map: Mutex<HashMap<String, Rope>>,
     accessed_files: Mutex<IndexSet<String>>,
 }
 
 impl FileStore {
-    pub fn new(file_store_config: config::FileStore, configuration: Config) -> Self {
+    pub fn new(file_store_config: config::FileStore, config: Config) -> Self {
         Self {
             _crawl: file_store_config.crawl,
-            configuration,
+            config,
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
         }
     }
 
-    pub fn new_without_crawl(configuration: Config) -> Self {
+    pub fn new_without_crawl(config: Config) -> Self {
         Self {
             _crawl: false,
-            configuration,
+            config,
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
         }
@@ -111,18 +111,18 @@ impl FileStore {
 
         let is_chat_enabled = match prompt_for_type {
             PromptForType::Completion => self
-                .configuration
+                .config
                 .get_chat()
                 .map(|c| c.completion.is_some())
                 .unwrap_or(false),
             PromptForType::Generate => self
-                .configuration
+                .config
                 .get_chat()
                 .map(|c| c.generation.is_some())
                 .unwrap_or(false),
         };
 
-        Ok(match (is_chat_enabled, self.configuration.get_fim()) {
+        Ok(match (is_chat_enabled, self.config.get_fim()) {
             r @ (true, _) | r @ (false, Some(_)) if rope.len_chars() != cursor_index => {
                 let max_length = tokens_to_estimated_characters(max_context_length);
                 let start = cursor_index.saturating_sub(max_length / 2);
@@ -192,10 +192,13 @@ impl MemoryBackend for FileStore {
         position: &TextDocumentPositionParams,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt> {
+        // TODO: Fix this
+        // we need to be subtracting the completion / generation tokens from max_context_length
+        // not sure if we should be doing that for the chat maybe leave a note here for that?
         let code = self.build_code(
             position,
             prompt_for_type,
-            self.configuration.get_max_context_length(),
+            self.config.get_max_context_length(),
         )?;
         Ok(Prompt::new("".to_string(), code))
     }

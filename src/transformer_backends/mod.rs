@@ -1,5 +1,5 @@
 use crate::{
-    config::{Config, ValidTransformerBackend},
+    config::{Config, ValidModel},
     memory_backends::Prompt,
     transformer_worker::{
         DoCompletionResponse, DoGenerationResponse, DoGenerationStreamResponse,
@@ -26,13 +26,9 @@ impl TryFrom<Config> for Box<dyn TransformerBackend + Send + Sync> {
 
     fn try_from(configuration: Config) -> Result<Self, Self::Error> {
         match configuration.config.transformer {
-            ValidTransformerBackend::LLaMACPP(model_gguf) => {
-                Ok(Box::new(llama_cpp::LLaMACPP::new(model_gguf)?))
-            }
-            ValidTransformerBackend::OpenAI(openai_config) => {
-                Ok(Box::new(openai::OpenAI::new(openai_config)))
-            }
-            ValidTransformerBackend::Anthropic(anthropic_config) => {
+            ValidModel::LLaMACPP(model_gguf) => Ok(Box::new(llama_cpp::LLaMACPP::new(model_gguf)?)),
+            ValidModel::OpenAI(openai_config) => Ok(Box::new(openai::OpenAI::new(openai_config))),
+            ValidModel::Anthropic(anthropic_config) => {
                 Ok(Box::new(anthropic::Anthropic::new(anthropic_config)))
             }
         }
