@@ -40,6 +40,7 @@ pub trait MemoryBackend {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
+        max_context_length: usize,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt>;
     async fn get_filter_text(

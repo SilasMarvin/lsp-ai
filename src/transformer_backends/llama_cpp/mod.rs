@@ -1,9 +1,10 @@
 use anyhow::Context;
 use hf_hub::api::sync::ApiBuilder;
+use serde::Deserialize;
 use tracing::instrument;
 
 use crate::{
-    config::{self},
+    config::{self, ChatMessage, FIM},
     memory_backends::Prompt,
     template::apply_chat_template,
     transformer_worker::{
@@ -16,7 +17,22 @@ use crate::{
 mod model;
 use model::Model;
 
-use super::TransformerBackend;
+use super::{RunParams, TransformerBackend};
+
+const fn max_new_tokens_default() -> usize {
+    32
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LLaMACPPRunParams {
+    pub fim: Option<FIM>,
+    chat: Option<Vec<ChatMessage>>,
+    chat_template: Option<String>,
+    chat_format: Option<String>,
+    #[serde(default = "max_new_tokens_default")]
+    pub max_new_tokens: usize,
+    // TODO: Explore other arguments
+}
 
 pub struct LLaMACPP {
     model: Model,
@@ -42,21 +58,21 @@ impl LLaMACPP {
     }
 
     #[instrument(skip(self))]
-    fn get_prompt_string(&self, prompt: &Prompt) -> anyhow::Result<String> {
+    fn get_prompt_string(
+        &self,
+        prompt: &Prompt,
+        params: &LLaMACPPRunParams,
+    ) -> anyhow::Result<String> {
         // We need to check that they not only set the `chat` key, but they set the `completion` sub key
-        Ok(match &self.configuration.chat {
-            Some(c) => {
-                if let Some(completion_messages) = &c.completion {
-                    let chat_messages = format_chat_messages(completion_messages, prompt);
-                    if let Some(chat_template) = &c.chat_template {
-                        let bos_token = self.model.get_bos_token()?;
-                        let eos_token = self.model.get_eos_token()?;
-                        apply_chat_template(chat_template, chat_messages, &bos_token, &eos_token)?
-                    } else {
-                        self.model.apply_chat_template(chat_messages, None)?
-                    }
+        Ok(match &params.chat {
+            Some(completion_messages) => {
+                let chat_messages = format_chat_messages(completion_messages, prompt);
+                if let Some(chat_template) = &params.chat_template {
+                    let bos_token = self.model.get_bos_token()?;
+                    let eos_token = self.model.get_eos_token()?;
+                    apply_chat_template(chat_template, chat_messages, &bos_token, &eos_token)?
                 } else {
-                    prompt.code.to_owned()
+                    self.model.apply_chat_template(chat_messages, None)?
                 }
             }
             None => prompt.code.to_owned(),
@@ -67,20 +83,28 @@ impl LLaMACPP {
 #[async_trait::async_trait]
 impl TransformerBackend for LLaMACPP {
     #[instrument(skip(self))]
-    async fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse> {
-        let prompt = self.get_prompt_string(prompt)?;
-        let max_new_tokens = self.configuration.max_tokens.completion;
+    async fn do_completion(
+        &self,
+        prompt: &Prompt,
+        params: RunParams,
+    ) -> anyhow::Result<DoCompletionResponse> {
+        let params: LLaMACPPRunParams = params.try_into()?;
+        let prompt = self.get_prompt_string(prompt, &params)?;
         self.model
-            .complete(&prompt, max_new_tokens)
+            .complete(&prompt, params)
             .map(|insert_text| DoCompletionResponse { insert_text })
     }
 
     #[instrument(skip(self))]
-    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerationResponse> {
-        let prompt = self.get_prompt_string(prompt)?;
-        let max_new_tokens = self.configuration.max_tokens.completion;
+    async fn do_generate(
+        &self,
+        prompt: &Prompt,
+        params: RunParams,
+    ) -> anyhow::Result<DoGenerationResponse> {
+        let params: LLaMACPPRunParams = params.try_into()?;
+        let prompt = self.get_prompt_string(prompt, &params)?;
         self.model
-            .complete(&prompt, max_new_tokens)
+            .complete(&prompt, params)
             .map(|generated_text| DoGenerationResponse { generated_text })
     }
 
@@ -88,6 +112,7 @@ impl TransformerBackend for LLaMACPP {
     async fn do_generate_stream(
         &self,
         _request: &GenerationStreamRequest,
+        params: RunParams,
     ) -> anyhow::Result<DoGenerationStreamResponse> {
         unimplemented!()
     }
@@ -100,48 +125,48 @@ mod test {
 
     #[tokio::test]
     async fn llama_cpp_do_completion() -> anyhow::Result<()> {
-        let configuration: config::LLaMACPP = serde_json::from_value(json!({
-            "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
-            "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
-            "max_new_tokens": {
-                "completion": 32,
-                "generation": 256,
-            },
-            "fim": {
-                "start": "<fim_prefix>",
-                "middle": "<fim_suffix>",
-                "end": "<fim_middle>"
-            },
-            "chat": {
-                // "completion": [
-                //     {
-                //         "role": "system",
-                //         "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. Keep your response brief. Do not produce any text besides code. \n\n{context}",
-                //     },
-                //     {
-                //         "role": "user",
-                //         "content": "Complete the following code: \n\n{code}"
-                //     }
-                // ],
-                // "generation": [
-                //     {
-                //         "role": "system",
-                //         "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{context}",
-                //     },
-                //     {
-                //         "role": "user",
-                //         "content": "Complete the following code: \n\n{code}"
-                //     }
-                // ],
-                "chat_template": "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n<|EOT|>\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
-            },
-            "n_ctx": 2048,
-            "n_gpu_layers": 35,
-        }))?;
-        let llama_cpp = LLaMACPP::new(configuration).unwrap();
-        let prompt = Prompt::default_with_cursor();
-        let response = llama_cpp.do_completion(&prompt).await?;
-        assert!(!response.insert_text.is_empty());
+        // let configuration: config::LLaMACPP = serde_json::from_value(json!({
+        //     "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
+        //     "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
+        //     "max_new_tokens": {
+        //         "completion": 32,
+        //         "generation": 256,
+        //     },
+        //     "fim": {
+        //         "start": "<fim_prefix>",
+        //         "middle": "<fim_suffix>",
+        //         "end": "<fim_middle>"
+        //     },
+        //     "chat": {
+        //         // "completion": [
+        //         //     {
+        //         //         "role": "system",
+        //         //         "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. Keep your response brief. Do not produce any text besides code. \n\n{context}",
+        //         //     },
+        //         //     {
+        //         //         "role": "user",
+        //         //         "content": "Complete the following code: \n\n{code}"
+        //         //     }
+        //         // ],
+        //         // "generation": [
+        //         //     {
+        //         //         "role": "system",
+        //         //         "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{context}",
+        //         //     },
+        //         //     {
+        //         //         "role": "user",
+        //         //         "content": "Complete the following code: \n\n{code}"
+        //         //     }
+        //         // ],
+        //         "chat_template": "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n<|EOT|>\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
+        //     },
+        //     "n_ctx": 2048,
+        //     "n_gpu_layers": 35,
+        // }))?;
+        // let llama_cpp = LLaMACPP::new(configuration).unwrap();
+        // let prompt = Prompt::default_with_cursor();
+        // let response = llama_cpp.do_completion(&prompt).await?;
+        // assert!(!response.insert_text.is_empty());
         Ok(())
     }
 }

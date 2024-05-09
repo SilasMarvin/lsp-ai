@@ -11,6 +11,7 @@ use crate::memory_backends::{MemoryBackend, Prompt, PromptForType};
 #[derive(Debug)]
 pub struct PromptRequest {
     position: TextDocumentPositionParams,
+    max_context_length: usize,
     prompt_for_type: PromptForType,
     tx: tokio::sync::oneshot::Sender<Prompt>,
 }
@@ -18,11 +19,13 @@ pub struct PromptRequest {
 impl PromptRequest {
     pub fn new(
         position: TextDocumentPositionParams,
+        max_context_length: usize,
         prompt_for_type: PromptForType,
         tx: tokio::sync::oneshot::Sender<Prompt>,
     ) -> Self {
         Self {
             position,
+            max_context_length,
             prompt_for_type,
             tx,
         }
@@ -66,7 +69,11 @@ async fn do_task(
         }
         WorkerRequest::Prompt(params) => {
             let prompt = memory_backend
-                .build_prompt(&params.position, params.prompt_for_type)
+                .build_prompt(
+                    &params.position,
+                    params.max_context_length,
+                    params.prompt_for_type,
+                )
                 .await?;
             params
                 .tx

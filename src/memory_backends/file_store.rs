@@ -190,16 +190,10 @@ impl MemoryBackend for FileStore {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
+        max_context_length: usize,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt> {
-        // TODO: Fix this
-        // we need to be subtracting the completion / generation tokens from max_context_length
-        // not sure if we should be doing that for the chat maybe leave a note here for that?
-        let code = self.build_code(
-            position,
-            prompt_for_type,
-            self.config.get_max_context_length(),
-        )?;
+        let code = self.build_code(position, prompt_for_type, max_context_length)?;
         Ok(Prompt::new("".to_string(), code))
     }
 

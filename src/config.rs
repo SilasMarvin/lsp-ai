@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::memory_backends::PromptForType;
 
 const DEFAULT_LLAMA_CPP_N_CTX: usize = 1024;
-const DEFAULT_OPENAI_MAX_CONTEXT: usize = 2048;
+const DEFAULT_OPENAI_MAX_CONTEXT_LENGTH: usize = 2048;
 
 const DEFAULT_MAX_COMPLETION_TOKENS: usize = 16;
 const DEFAULT_MAX_GENERATION_TOKENS: usize = 64;
@@ -105,13 +105,8 @@ pub struct LLaMACPP {
     // The model to use
     #[serde(flatten)]
     pub model: Model,
-    // // Fill in the middle support
-    // pub fim: Option<FIM>,
-    // // The maximum number of new tokens to generate
-    // #[serde(default)]
-    // pub max_tokens: MaxTokens,
-    // // Chat args
-    // pub chat: Option<Chat>,
+
+    // TODO: Remove Kwargs here and replace with concrete types
     // Kwargs passed to LlamaCPP
     #[serde(flatten)]
     pub kwargs: Kwargs,
@@ -140,26 +135,6 @@ const fn api_max_requests_per_second_default() -> f32 {
     0.5
 }
 
-const fn top_p_default() -> f32 {
-    0.95
-}
-
-const fn presence_penalty_default() -> f32 {
-    0.
-}
-
-const fn frequency_penalty_default() -> f32 {
-    0.
-}
-
-const fn temperature_default() -> f32 {
-    0.1
-}
-
-const fn max_context_default() -> usize {
-    DEFAULT_OPENAI_MAX_CONTEXT
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct OpenAI {
     // The auth token env var name
@@ -174,24 +149,6 @@ pub struct OpenAI {
     pub max_requests_per_second: f32,
     // The model name
     pub model: String,
-    // // Fill in the middle support
-    // pub fim: Option<FIM>,
-    // // The maximum number of new tokens to generate
-    // #[serde(default)]
-    // pub max_tokens: MaxTokens,
-    // // Chat args
-    // pub chat: Option<Chat>,
-    // // Other available args
-    // #[serde(default = "top_p_default")]
-    // pub top_p: f32,
-    // #[serde(default = "presence_penalty_default")]
-    // pub presence_penalty: f32,
-    // #[serde(default = "frequency_penalty_default")]
-    // pub frequency_penalty: f32,
-    // #[serde(default = "temperature_default")]
-    // pub temperature: f32,
-    // #[serde(default = "max_context_default")]
-    // max_context: usize,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -208,17 +165,6 @@ pub struct Anthropic {
     pub max_requests_per_second: f32,
     // The model name
     pub model: String,
-    // // The maximum number of new tokens to generate
-    // #[serde(default)]
-    // pub max_tokens: MaxTokens,
-    // // Chat args
-    // pub chat: Chat,
-    // #[serde(default = "top_p_default")]
-    // pub top_p: f32,
-    // #[serde(default = "temperature_default")]
-    // pub temperature: f32,
-    // #[serde(default = "max_context_default")]
-    // max_context: usize,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -226,27 +172,36 @@ pub struct Completion {
     // The model key to use
     pub model: String,
 
-    // Model args
-    #[serde(default)]
-    pub max_tokens: MaxTokens,
-    #[serde(default = "presence_penalty_default")]
-    pub presence_penalty: f32,
-    #[serde(default = "frequency_penalty_default")]
-    pub frequency_penalty: f32,
-    #[serde(default = "top_p_default")]
-    pub top_p: f32,
-    #[serde(default = "temperature_default")]
-    pub temperature: f32,
-    #[serde(default = "max_context_default")]
-    max_context: usize,
+    // // Model args
+    // pub max_new_tokens: Option<usize>,
+    // pub presence_penalty: Option<f32>,
+    // pub frequency_penalty: Option<f32>,
+    // pub top_p: Option<f32>,
+    // pub temperature: Option<f32>,
+    // pub max_context_length: Option<usize>,
 
-    // FIM args
-    pub fim: Option<FIM>,
+    // // FIM args
+    // pub fim: Option<FIM>,
 
-    // Chat args
-    pub chat: Option<Vec<ChatMessage>>,
-    pub chat_template: Option<String>,
-    pub chat_format: Option<String>,
+    // // Chat args
+    // pub chat: Option<Vec<ChatMessage>>,
+    // pub chat_template: Option<String>,
+    // pub chat_format: Option<String>,
+    kwargs: HashMap<String, Value>,
+}
+
+impl Default for Completion {
+    fn default() -> Self {
+        Self {
+            model: "default_model".to_string(),
+            // fim: Some(FIM {
+            //     start: "<fim_prefix>".to_string(),
+            //     middle: "<fim_suffix>".to_string(),
+            //     end: "<fim_middle>".to_string(),
+            // }),
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -254,9 +209,9 @@ pub struct ValidConfig {
     #[serde(default)]
     pub memory: ValidMemoryBackend,
     #[serde(default)]
-    pub transformer: ValidModel,
-    #[serde(default)]
     pub models: HashMap<String, ValidModel>,
+    #[serde(default)]
+    pub completion: Completion,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -274,6 +229,7 @@ pub struct Config {
 
 impl Config {
     pub fn new(mut args: Value) -> Result<Self> {
+        // Validate that the models specfied are there so we can unwrap
         let configuration_args = args
             .as_object_mut()
             .context("Server configuration must be a JSON object")?
@@ -293,45 +249,39 @@ impl Config {
     // Helpers for the backends ///////////
     ///////////////////////////////////////
 
-    pub fn get_transformer_max_requests_per_second(&self) -> f32 {
-        match &self.config.transformer {
+    pub fn get_completion_transformer_max_requests_per_second(&self) -> f32 {
+        // We can unwrap here as we verified this exists in the new function
+        match &self
+            .config
+            .models
+            .get(&self.config.completion.model)
+            .unwrap()
+        {
             ValidModel::LLaMACPP(_) => 1.,
             ValidModel::OpenAI(openai) => openai.max_requests_per_second,
             ValidModel::Anthropic(anthropic) => anthropic.max_requests_per_second,
         }
     }
 
-    pub fn get_max_context_length(&self) -> usize {
-        match &self.config.transformer {
-            ValidModel::LLaMACPP(llama_cpp) => llama_cpp
-                .kwargs
-                .get("n_ctx")
-                .map(|v| {
-                    v.as_u64()
-                        .map(|u| u as usize)
-                        .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX)
-                })
-                .unwrap_or(DEFAULT_LLAMA_CPP_N_CTX),
-            ValidModel::OpenAI(openai) => openai.max_context,
-            ValidModel::Anthropic(anthropic) => anthropic.max_context,
-        }
-    }
+    // pub fn get_completion_max_context_length(&self) -> anyhow::Result<usize> {
+    //     Ok(self.config.completion.max_context_length)
+    // }
 
-    pub fn get_fim(&self) -> Option<&FIM> {
-        match &self.config.transformer {
-            ValidModel::LLaMACPP(llama_cpp) => llama_cpp.fim.as_ref(),
-            ValidModel::OpenAI(openai) => openai.fim.as_ref(),
-            ValidModel::Anthropic(_) => None,
-        }
-    }
+    // pub fn get_fim(&self) -> Option<&FIM> {
+    //     match &self.config.transformer {
+    //         ValidModel::LLaMACPP(llama_cpp) => llama_cpp.fim.as_ref(),
+    //         ValidModel::OpenAI(openai) => openai.fim.as_ref(),
+    //         ValidModel::Anthropic(_) => None,
+    //     }
+    // }
 
-    pub fn get_chat(&self) -> Option<&Chat> {
-        match &self.config.transformer {
-            ValidModel::LLaMACPP(llama_cpp) => llama_cpp.chat.as_ref(),
-            ValidModel::OpenAI(openai) => openai.chat.as_ref(),
-            ValidModel::Anthropic(anthropic) => Some(&anthropic.chat),
-        }
-    }
+    // pub fn get_chat(&self) -> Option<&Chat> {
+    //     match &self.config.transformer {
+    //         ValidModel::LLaMACPP(llama_cpp) => llama_cpp.chat.as_ref(),
+    //         ValidModel::OpenAI(openai) => openai.chat.as_ref(),
+    //         ValidModel::Anthropic(anthropic) => Some(&anthropic.chat),
+    //     }
+    // }
 }
 
 #[cfg(test)]

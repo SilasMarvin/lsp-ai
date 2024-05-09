@@ -6,6 +6,7 @@ use lsp_types::{
     RenameFilesParams, ServerCapabilities, TextDocumentSyncKind,
 };
 use std::{
+    collections::HashMap,
     sync::{mpsc, Arc},
     thread,
 };
@@ -92,14 +93,21 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
 
     // Setup our transformer worker
-    let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
-        config.clone().try_into()?;
+    // let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
+    //     config.clone().try_into()?;
+    let transformer_backends: HashMap<String, Box<dyn TransformerBackend + Send + Sync>> = config
+        .config
+        .models
+        .clone()
+        .into_iter()
+        .map(|(key, value)| Ok((key, value.try_into()?)))
+        .collect::<anyhow::Result<HashMap<String, Box<dyn TransformerBackend + Send + Sync>>>>()?;
     let thread_connection = connection.clone();
     let thread_memory_tx = memory_tx.clone();
     let thread_config = config.clone();
     thread::spawn(move || {
         transformer_worker::run(
-            transformer_backend,
+            transformer_backends,
             thread_memory_tx,
             transformer_rx,
             thread_connection,

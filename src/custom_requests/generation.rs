@@ -9,6 +9,7 @@ pub struct GenerationParams {
     // This field was "mixed-in" from TextDocumentPositionParams
     #[serde(flatten)]
     pub text_document_position: TextDocumentPositionParams,
+    pub model: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]

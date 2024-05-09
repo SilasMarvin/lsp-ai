@@ -129,6 +129,7 @@ impl MemoryBackend for PostgresML {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
+        max_context_length: usize,
         prompt_for_type: PromptForType,
     ) -> anyhow::Result<Prompt> {
         let query = self
@@ -162,8 +163,7 @@ impl MemoryBackend for PostgresML {
             .collect::<anyhow::Result<Vec<String>>>()?
             .join("\n\n");
         let code = self.file_store.build_code(position, prompt_for_type, 512)?;
-        let max_characters =
-            tokens_to_estimated_characters(self.configuration.get_max_context_length());
+        let max_characters = tokens_to_estimated_characters(max_context_length);
         let context: String = context
             .chars()
             .take(max_characters - code.chars().count())

@@ -1,5 +1,5 @@
 use crate::{
-    config::{Config, ValidModel},
+    config::{self, ValidModel},
     memory_backends::Prompt,
     transformer_worker::{
         DoCompletionResponse, DoGenerationResponse, DoGenerationStreamResponse,
@@ -7,25 +7,70 @@ use crate::{
     },
 };
 
+use self::{anthropic::AnthropicRunParams, llama_cpp::LLaMACPPRunParams, openai::OpenAIRunParams};
+
 mod anthropic;
 mod llama_cpp;
 mod openai;
 
+#[derive(Debug)]
+pub enum RunParams {
+    LLaMACPP(llama_cpp::LLaMACPPRunParams),
+    Anthropic(anthropic::AnthropicRunParams),
+    OpenAI(openai::OpenAIRunParams),
+}
+
+impl RunParams {
+    pub fn from_completion(completion: &Completion) -> Self {
+        todo!()
+    }
+}
+
+macro_rules! impl_runparams_try_into {
+    ( $f:ident, $t:ident ) => {
+        impl TryInto<$f> for RunParams {
+            type Error = anyhow::Error;
+
+            fn try_into(self) -> Result<$f, Self::Error> {
+                match self {
+                    Self::$t(a) => Ok(a),
+                    _ => anyhow::bail!("Cannot convert RunParams into {}", stringify!($f)),
+                }
+            }
+        }
+    };
+}
+
+impl_runparams_try_into!(AnthropicRunParams, Anthropic);
+impl_runparams_try_into!(LLaMACPPRunParams, LLaMACPP);
+impl_runparams_try_into!(OpenAIRunParams, OpenAI);
+
 #[async_trait::async_trait]
 pub trait TransformerBackend {
-    async fn do_completion(&self, prompt: &Prompt) -> anyhow::Result<DoCompletionResponse>;
-    async fn do_generate(&self, prompt: &Prompt) -> anyhow::Result<DoGenerationResponse>;
+    type Test = LLaMACPPRunParams;
+
+    async fn do_completion(
+        &self,
+        prompt: &Prompt,
+        params: RunParams,
+    ) -> anyhow::Result<DoCompletionResponse>;
+    async fn do_generate(
+        &self,
+        prompt: &Prompt,
+        params: RunParams,
+    ) -> anyhow::Result<DoGenerationResponse>;
     async fn do_generate_stream(
         &self,
         request: &GenerationStreamRequest,
+        params: RunParams,
     ) -> anyhow::Result<DoGenerationStreamResponse>;
 }
 
-impl TryFrom<Config> for Box<dyn TransformerBackend + Send + Sync> {
+impl TryFrom<ValidModel> for Box<dyn TransformerBackend + Send + Sync> {
     type Error = anyhow::Error;
 
-    fn try_from(configuration: Config) -> Result<Self, Self::Error> {
-        match configuration.config.transformer {
+    fn try_from(valid_model: ValidModel) -> Result<Self, Self::Error> {
+        match valid_model {
             ValidModel::LLaMACPP(model_gguf) => Ok(Box::new(llama_cpp::LLaMACPP::new(model_gguf)?)),
             ValidModel::OpenAI(openai_config) => Ok(Box::new(openai::OpenAI::new(openai_config))),
             ValidModel::Anthropic(anthropic_config) => {

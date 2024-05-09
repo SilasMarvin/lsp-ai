@@ -13,6 +13,8 @@ use tracing::{debug, info, instrument};
 
 use crate::config::{ChatMessage, Kwargs};
 
+use super::LLaMACPPRunParams;
+
 static BACKEND: Lazy<LlamaBackend> = Lazy::new(|| LlamaBackend::init().unwrap());
 
 pub struct Model {
@@ -53,7 +55,7 @@ impl Model {
     }
 
     #[instrument(skip(self))]
-    pub fn complete(&self, prompt: &str, max_new_tokens: usize) -> anyhow::Result<String> {
+    pub fn complete(&self, prompt: &str, params: LLaMACPPRunParams) -> anyhow::Result<String> {
         // initialize the context
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(Some(self.n_ctx))
@@ -70,9 +72,12 @@ impl Model {
             .with_context(|| format!("failed to tokenize {}", prompt))?;
 
         let n_cxt = ctx.n_ctx() as usize;
-        let n_kv_req = tokens_list.len() + max_new_tokens;
+        let n_kv_req = tokens_list.len() + params.max_new_tokens;
 
-        info!("n_len / max_new_tokens = {max_new_tokens}, n_ctx = {n_cxt}, k_kv_req = {n_kv_req}");
+        info!(
+            "n_len / max_new_tokens = {}, n_ctx = {n_cxt}, k_kv_req = {n_kv_req}",
+            params.max_new_tokens
+        );
 
         // make sure the KV cache is big enough to hold all the prompt and generated tokens
         if n_kv_req > n_cxt {
@@ -100,7 +105,7 @@ impl Model {
         let mut n_cur = n_start;
         let mut n_decode = 0;
         let t_main_start = ggml_time_us();
-        while (n_cur as usize) <= (n_start as usize + max_new_tokens) {
+        while (n_cur as usize) <= (n_start as usize + params.max_new_tokens) {
             // sample the next token
             {
                 let candidates = ctx.candidates_ith(batch.n_tokens() - 1);
