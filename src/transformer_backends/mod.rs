@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 use crate::{
     config::{self, ValidModel},
     memory_backends::Prompt,
@@ -13,56 +15,47 @@ mod anthropic;
 mod llama_cpp;
 mod openai;
 
-#[derive(Debug)]
-pub enum RunParams {
-    LLaMACPP(llama_cpp::LLaMACPPRunParams),
-    Anthropic(anthropic::AnthropicRunParams),
-    OpenAI(openai::OpenAIRunParams),
-}
+// impl RunParams {
+//     pub fn from_completion(completion: &Completion) -> Self {
+//         todo!()
+//     }
+// }
 
-impl RunParams {
-    pub fn from_completion(completion: &Completion) -> Self {
-        todo!()
-    }
-}
+// macro_rules! impl_runparams_try_into {
+//     ( $f:ident, $t:ident ) => {
+//         impl TryInto<$f> for RunParams {
+//             type Error = anyhow::Error;
 
-macro_rules! impl_runparams_try_into {
-    ( $f:ident, $t:ident ) => {
-        impl TryInto<$f> for RunParams {
-            type Error = anyhow::Error;
+//             fn try_into(self) -> Result<$f, Self::Error> {
+//                 match self {
+//                     Self::$t(a) => Ok(a),
+//                     _ => anyhow::bail!("Cannot convert RunParams into {}", stringify!($f)),
+//                 }
+//             }
+//         }
+//     };
+// }
 
-            fn try_into(self) -> Result<$f, Self::Error> {
-                match self {
-                    Self::$t(a) => Ok(a),
-                    _ => anyhow::bail!("Cannot convert RunParams into {}", stringify!($f)),
-                }
-            }
-        }
-    };
-}
-
-impl_runparams_try_into!(AnthropicRunParams, Anthropic);
-impl_runparams_try_into!(LLaMACPPRunParams, LLaMACPP);
-impl_runparams_try_into!(OpenAIRunParams, OpenAI);
+// impl_runparams_try_into!(AnthropicRunParams, Anthropic);
+// impl_runparams_try_into!(LLaMACPPRunParams, LLaMACPP);
+// impl_runparams_try_into!(OpenAIRunParams, OpenAI);
 
 #[async_trait::async_trait]
 pub trait TransformerBackend {
-    type Test = LLaMACPPRunParams;
-
     async fn do_completion(
         &self,
         prompt: &Prompt,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoCompletionResponse>;
     async fn do_generate(
         &self,
         prompt: &Prompt,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoGenerationResponse>;
     async fn do_generate_stream(
         &self,
         request: &GenerationStreamRequest,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoGenerationStreamResponse>;
 }
 

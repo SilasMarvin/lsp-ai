@@ -2,11 +2,25 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, RenameFilesParams,
     TextDocumentPositionParams,
 };
+use serde::Deserialize;
+use serde_json::Value;
 
-use crate::config::{Config, ValidMemoryBackend};
+use crate::config::{ChatMessage, Config, ValidMemoryBackend, FIM};
 
 pub mod file_store;
 mod postgresml;
+
+const fn max_context_length_default() -> usize {
+    1024
+}
+
+#[derive(Clone, Deserialize)]
+struct MemoryRunParams {
+    pub fim: Option<FIM>,
+    pub chat: Option<Vec<ChatMessage>>,
+    #[serde(default = "max_context_length_default")]
+    pub max_context_length: usize,
+}
 
 #[derive(Debug)]
 pub struct Prompt {
@@ -18,12 +32,6 @@ impl Prompt {
     pub fn new(context: String, code: String) -> Self {
         Self { context, code }
     }
-}
-
-#[derive(Debug)]
-pub enum PromptForType {
-    Completion,
-    Generate,
 }
 
 #[async_trait::async_trait]
@@ -40,8 +48,7 @@ pub trait MemoryBackend {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
-        max_context_length: usize,
-        prompt_for_type: PromptForType,
+        params: Value,
     ) -> anyhow::Result<Prompt>;
     async fn get_filter_text(
         &self,

@@ -3,6 +3,7 @@ use indexmap::IndexSet;
 use lsp_types::TextDocumentPositionParams;
 use parking_lot::Mutex;
 use ropey::Rope;
+use serde_json::Value;
 use std::collections::HashMap;
 use tracing::instrument;
 
@@ -11,7 +12,7 @@ use crate::{
     utils::tokens_to_estimated_characters,
 };
 
-use super::{MemoryBackend, Prompt, PromptForType};
+use super::{MemoryBackend, MemoryRunParams, Prompt};
 
 pub struct FileStore {
     _crawl: bool,
@@ -104,33 +105,20 @@ impl FileStore {
     pub fn build_code(
         &self,
         position: &TextDocumentPositionParams,
-        prompt_for_type: PromptForType,
-        max_context_length: usize,
+        params: MemoryRunParams,
     ) -> anyhow::Result<String> {
-        let (mut rope, cursor_index) = self.get_rope_for_position(position, max_context_length)?;
+        let (mut rope, cursor_index) =
+            self.get_rope_for_position(position, params.max_context_length)?;
 
-        let is_chat_enabled = match prompt_for_type {
-            PromptForType::Completion => self
-                .config
-                .get_chat()
-                .map(|c| c.completion.is_some())
-                .unwrap_or(false),
-            PromptForType::Generate => self
-                .config
-                .get_chat()
-                .map(|c| c.generation.is_some())
-                .unwrap_or(false),
-        };
-
-        Ok(match (is_chat_enabled, self.config.get_fim()) {
+        Ok(match (params.chat.is_some(), params.fim) {
             r @ (true, _) | r @ (false, Some(_)) if rope.len_chars() != cursor_index => {
-                let max_length = tokens_to_estimated_characters(max_context_length);
+                let max_length = tokens_to_estimated_characters(params.max_context_length);
                 let start = cursor_index.saturating_sub(max_length / 2);
                 let end = rope
                     .len_chars()
                     .min(cursor_index + (max_length - (cursor_index - start)));
 
-                if is_chat_enabled {
+                if r.0 {
                     rope.insert(cursor_index, "<CURSOR>");
                     let rope_slice = rope
                         .get_slice(start..end + "<CURSOR>".chars().count())
@@ -154,8 +142,8 @@ impl FileStore {
                 }
             }
             _ => {
-                let start =
-                    cursor_index.saturating_sub(tokens_to_estimated_characters(max_context_length));
+                let start = cursor_index
+                    .saturating_sub(tokens_to_estimated_characters(params.max_context_length));
                 let rope_slice = rope
                     .get_slice(start..cursor_index)
                     .context("Error getting rope slice")?;
@@ -190,10 +178,10 @@ impl MemoryBackend for FileStore {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
-        max_context_length: usize,
-        prompt_for_type: PromptForType,
+        params: Value,
     ) -> anyhow::Result<Prompt> {
-        let code = self.build_code(position, prompt_for_type, max_context_length)?;
+        let params: MemoryRunParams = serde_json::from_value(params)?;
+        let code = self.build_code(position, params)?;
         Ok(Prompt::new("".to_string(), code))
     }
 

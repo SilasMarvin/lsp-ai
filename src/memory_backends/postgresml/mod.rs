@@ -6,7 +6,7 @@ use std::{
 use anyhow::Context;
 use lsp_types::TextDocumentPositionParams;
 use pgml::{Collection, Pipeline};
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::time;
 use tracing::instrument;
 
@@ -15,7 +15,7 @@ use crate::{
     utils::tokens_to_estimated_characters,
 };
 
-use super::{file_store::FileStore, MemoryBackend, Prompt, PromptForType};
+use super::{file_store::FileStore, MemoryBackend, MemoryRunParams, Prompt};
 
 pub struct PostgresML {
     configuration: Config,
@@ -129,9 +129,9 @@ impl MemoryBackend for PostgresML {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
-        max_context_length: usize,
-        prompt_for_type: PromptForType,
+        params: Value,
     ) -> anyhow::Result<Prompt> {
+        let params: MemoryRunParams = serde_json::from_value(params)?;
         let query = self
             .file_store
             .get_characters_around_position(position, 512)?;
@@ -162,8 +162,10 @@ impl MemoryBackend for PostgresML {
             })
             .collect::<anyhow::Result<Vec<String>>>()?
             .join("\n\n");
-        let code = self.file_store.build_code(position, prompt_for_type, 512)?;
-        let max_characters = tokens_to_estimated_characters(max_context_length);
+        let mut file_store_params = params.clone();
+        file_store_params.max_context_length = 512;
+        let code = self.file_store.build_code(position, file_store_params)?;
+        let max_characters = tokens_to_estimated_characters(params.max_context_length);
         let context: String = context
             .chars()
             .take(max_characters - code.chars().count())

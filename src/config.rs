@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::memory_backends::PromptForType;
-
 const DEFAULT_LLAMA_CPP_N_CTX: usize = 1024;
 const DEFAULT_OPENAI_MAX_CONTEXT_LENGTH: usize = 2048;
 
@@ -187,7 +185,7 @@ pub struct Completion {
     // pub chat: Option<Vec<ChatMessage>>,
     // pub chat_template: Option<String>,
     // pub chat_format: Option<String>,
-    kwargs: HashMap<String, Value>,
+    pub kwargs: HashMap<String, Value>,
 }
 
 impl Default for Completion {
@@ -262,26 +260,6 @@ impl Config {
             ValidModel::Anthropic(anthropic) => anthropic.max_requests_per_second,
         }
     }
-
-    // pub fn get_completion_max_context_length(&self) -> anyhow::Result<usize> {
-    //     Ok(self.config.completion.max_context_length)
-    // }
-
-    // pub fn get_fim(&self) -> Option<&FIM> {
-    //     match &self.config.transformer {
-    //         ValidModel::LLaMACPP(llama_cpp) => llama_cpp.fim.as_ref(),
-    //         ValidModel::OpenAI(openai) => openai.fim.as_ref(),
-    //         ValidModel::Anthropic(_) => None,
-    //     }
-    // }
-
-    // pub fn get_chat(&self) -> Option<&Chat> {
-    //     match &self.config.transformer {
-    //         ValidModel::LLaMACPP(llama_cpp) => llama_cpp.chat.as_ref(),
-    //         ValidModel::OpenAI(openai) => openai.chat.as_ref(),
-    //         ValidModel::Anthropic(anthropic) => Some(&anthropic.chat),
-    //     }
-    // }
 }
 
 #[cfg(test)]

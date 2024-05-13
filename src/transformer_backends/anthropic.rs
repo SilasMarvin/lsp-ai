@@ -13,7 +13,7 @@ use crate::{
     utils::format_chat_messages,
 };
 
-use super::{RunParams, TransformerBackend};
+use super::TransformerBackend;
 
 const fn max_tokens_default() -> usize {
     64
@@ -27,10 +27,6 @@ const fn temperature_default() -> f32 {
     0.1
 }
 
-const fn max_context_length_default() -> usize {
-    1024
-}
-
 #[derive(Debug, Deserialize)]
 pub struct AnthropicRunParams {
     chat: Vec<ChatMessage>,
@@ -40,8 +36,6 @@ pub struct AnthropicRunParams {
     pub top_p: f32,
     #[serde(default = "temperature_default")]
     pub temperature: f32,
-    #[serde(default = "max_context_length_default")]
-    max_context_length: usize,
 }
 
 pub struct Anthropic {
@@ -133,9 +127,10 @@ impl TransformerBackend for Anthropic {
     async fn do_completion(
         &self,
         prompt: &Prompt,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoCompletionResponse> {
-        let params: AnthropicRunParams = params.try_into()?;
+        // let params: AnthropicRunParams = params.try_into()?;
+        let params: AnthropicRunParams = serde_json::from_value(params)?;
         let insert_text = self.do_get_chat(prompt, params).await?;
         Ok(DoCompletionResponse { insert_text })
     }
@@ -144,9 +139,9 @@ impl TransformerBackend for Anthropic {
     async fn do_generate(
         &self,
         prompt: &Prompt,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoGenerationResponse> {
-        let params: AnthropicRunParams = params.try_into()?;
+        let params: AnthropicRunParams = serde_json::from_value(params)?;
         let generated_text = self.do_get_chat(prompt, params).await?;
         Ok(DoGenerationResponse { generated_text })
     }
@@ -155,7 +150,7 @@ impl TransformerBackend for Anthropic {
     async fn do_generate_stream(
         &self,
         request: &GenerationStreamRequest,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoGenerationStreamResponse> {
         unimplemented!()
     }

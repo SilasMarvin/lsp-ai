@@ -1,6 +1,7 @@
 use anyhow::Context;
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
+use serde_json::Value;
 use tracing::instrument;
 
 use crate::{
@@ -17,7 +18,7 @@ use crate::{
 mod model;
 use model::Model;
 
-use super::{RunParams, TransformerBackend};
+use super::TransformerBackend;
 
 const fn max_new_tokens_default() -> usize {
     32
@@ -86,9 +87,9 @@ impl TransformerBackend for LLaMACPP {
     async fn do_completion(
         &self,
         prompt: &Prompt,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoCompletionResponse> {
-        let params: LLaMACPPRunParams = params.try_into()?;
+        let params: LLaMACPPRunParams = serde_json::from_value(params)?;
         let prompt = self.get_prompt_string(prompt, &params)?;
         self.model
             .complete(&prompt, params)
@@ -99,9 +100,9 @@ impl TransformerBackend for LLaMACPP {
     async fn do_generate(
         &self,
         prompt: &Prompt,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoGenerationResponse> {
-        let params: LLaMACPPRunParams = params.try_into()?;
+        let params: LLaMACPPRunParams = serde_json::from_value(params)?;
         let prompt = self.get_prompt_string(prompt, &params)?;
         self.model
             .complete(&prompt, params)
@@ -112,7 +113,7 @@ impl TransformerBackend for LLaMACPP {
     async fn do_generate_stream(
         &self,
         _request: &GenerationStreamRequest,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoGenerationStreamResponse> {
         unimplemented!()
     }

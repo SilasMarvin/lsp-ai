@@ -13,7 +13,7 @@ use crate::{
     utils::{format_chat_messages, format_context_code},
 };
 
-use super::{RunParams, TransformerBackend};
+use super::TransformerBackend;
 
 const fn max_tokens_default() -> usize {
     64
@@ -35,10 +35,6 @@ const fn temperature_default() -> f32 {
     0.1
 }
 
-const fn max_context_length_default() -> usize {
-    1024
-}
-
 #[derive(Debug, Deserialize)]
 pub struct OpenAIRunParams {
     pub fim: Option<FIM>,
@@ -53,8 +49,6 @@ pub struct OpenAIRunParams {
     pub frequency_penalty: f32,
     #[serde(default = "temperature_default")]
     pub temperature: f32,
-    #[serde(default = "max_context_length_default")]
-    max_context_length: usize,
 }
 
 pub struct OpenAI {
@@ -202,9 +196,10 @@ impl TransformerBackend for OpenAI {
     async fn do_completion(
         &self,
         prompt: &Prompt,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoCompletionResponse> {
-        let params: OpenAIRunParams = params.try_into()?;
+        // let params: OpenAIRunParams = params.try_into()?;
+        let params: OpenAIRunParams = serde_json::from_value(params)?;
         let insert_text = self.do_chat_completion(prompt, params).await?;
         Ok(DoCompletionResponse { insert_text })
     }
@@ -214,9 +209,9 @@ impl TransformerBackend for OpenAI {
         &self,
         prompt: &Prompt,
 
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoGenerationResponse> {
-        let params: OpenAIRunParams = params.try_into()?;
+        let params: OpenAIRunParams = serde_json::from_value(params)?;
         let generated_text = self.do_chat_completion(prompt, params).await?;
         Ok(DoGenerationResponse { generated_text })
     }
@@ -225,7 +220,7 @@ impl TransformerBackend for OpenAI {
     async fn do_generate_stream(
         &self,
         request: &GenerationStreamRequest,
-        params: RunParams,
+        params: Value,
     ) -> anyhow::Result<DoGenerationStreamResponse> {
         unimplemented!()
     }

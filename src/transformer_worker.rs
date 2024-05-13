@@ -14,7 +14,6 @@ use tracing::{error, instrument};
 use crate::config::Config;
 use crate::custom_requests::generation::{GenerateResult, GenerationParams};
 use crate::custom_requests::generation_stream::GenerationStreamParams;
-use crate::memory_backends::PromptForType;
 use crate::memory_worker::{self, FilterRequest, PromptRequest};
 use crate::transformer_backends::TransformerBackend;
 use crate::utils::ToResponseError;
@@ -219,15 +218,13 @@ async fn do_completion(
     // TODO: Fix this
     // we need to be subtracting the completion / generation tokens from max_context_length
     // not sure if we should be doing that for the chat maybe leave a note here for that?
-    // let max_context_length = config.get_completion_max_context_length()?;
 
-    let params: 
-    
+    let params = serde_json::to_value(config.config.completion.kwargs.clone()).unwrap();
+
     let (tx, rx) = oneshot::channel();
     memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
         request.params.text_document_position.clone(),
-        max_context_length,
-        PromptForType::Completion,
+        params.clone(),
         tx,
     )))?;
     let prompt = rx.await?;
@@ -238,7 +235,7 @@ async fn do_completion(
     ))?;
     let filter_text = rx.await?;
 
-    let response = transformer_backend.do_completion(&prompt).await?;
+    let response = transformer_backend.do_completion(&prompt, params).await?;
     let completion_text_edit = TextEdit::new(
         Range::new(
             Position::new(
