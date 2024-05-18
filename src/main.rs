@@ -17,6 +17,7 @@ mod config;
 mod custom_requests;
 mod memory_backends;
 mod memory_worker;
+#[cfg(feature = "llamacpp")]
 mod template;
 mod transformer_backends;
 mod transformer_worker;

@@ -16,7 +16,7 @@ use super::{MemoryBackend, MemoryRunParams, Prompt};
 
 pub struct FileStore {
     _crawl: bool,
-    config: Config,
+    _config: Config,
     file_map: Mutex<HashMap<String, Rope>>,
     accessed_files: Mutex<IndexSet<String>>,
 }
@@ -25,7 +25,7 @@ impl FileStore {
     pub fn new(file_store_config: config::FileStore, config: Config) -> Self {
         Self {
             _crawl: file_store_config.crawl,
-            config,
+            _config: config,
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
         }
@@ -34,7 +34,7 @@ impl FileStore {
     pub fn new_without_crawl(config: Config) -> Self {
         Self {
             _crawl: false,
-            config,
+            _config: config,
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
         }
@@ -110,7 +110,7 @@ impl FileStore {
         let (mut rope, cursor_index) =
             self.get_rope_for_position(position, params.max_context_length)?;
 
-        Ok(match (params.chat.is_some(), params.fim) {
+        Ok(match (params.messages.is_some(), params.fim) {
             r @ (true, _) | r @ (false, Some(_)) if rope.len_chars() != cursor_index => {
                 let max_length = tokens_to_estimated_characters(params.max_context_length);
                 let start = cursor_index.saturating_sub(max_length / 2);

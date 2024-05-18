@@ -129,7 +129,6 @@ impl TransformerBackend for Anthropic {
         prompt: &Prompt,
         params: Value,
     ) -> anyhow::Result<DoCompletionResponse> {
-        // let params: AnthropicRunParams = params.try_into()?;
         let params: AnthropicRunParams = serde_json::from_value(params)?;
         let insert_text = self.do_get_chat(prompt, params).await?;
         Ok(DoCompletionResponse { insert_text })
@@ -150,75 +149,68 @@ impl TransformerBackend for Anthropic {
     async fn do_generate_stream(
         &self,
         request: &GenerationStreamRequest,
-        params: Value,
+        _params: Value,
     ) -> anyhow::Result<DoGenerationStreamResponse> {
-        unimplemented!()
+        anyhow::bail!("GenerationStream is not yet implemented")
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use serde_json::{from_value, json};
 
     #[tokio::test]
     async fn anthropic_chat_do_completion() -> anyhow::Result<()> {
-        // let configuration: config::Anthropic = serde_json::from_value(json!({
-        //     "chat_endpoint": "https://api.anthropic.com/v1/messages",
-        //     "model": "claude-3-haiku-20240307",
-        //     "auth_token_env_var_name": "ANTHROPIC_API_KEY",
-        //     "chat": {
-        //         "completion": [
-        //             {
-        //                 "role": "system",
-        //                 "content": "You are a coding assistant. You job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
-        //             },
-        //             {
-        //                 "role": "user",
-        //                 "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
-        //             }
-        //         ],
-        //     },
-        //     "max_tokens": {
-        //         "completion": 16,
-        //         "generation": 64
-        //     },
-        //     "max_context": 4096
-        // }))?;
-        // let anthropic = Anthropic::new(configuration);
-        // let prompt = Prompt::default_with_cursor();
-        // let response = anthropic.do_completion(&prompt).await?;
-        // assert!(!response.insert_text.is_empty());
+        let configuration: config::Anthropic = from_value(json!({
+            "chat_endpoint": "https://api.anthropic.com/v1/messages",
+            "model": "claude-3-haiku-20240307",
+            "auth_token_env_var_name": "ANTHROPIC_API_KEY",
+        }))?;
+        let anthropic = Anthropic::new(configuration);
+        let prompt = Prompt::default_with_cursor();
+        let run_params = json!({
+            "chat": [
+                {
+                    "role": "system",
+                    "content": "You are a coding assistant. You job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
+                },
+                {
+                    "role": "user",
+                    "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
+                }
+            ],
+            "max_tokens": 64
+        });
+        let response = anthropic.do_completion(&prompt, run_params).await?;
+        assert!(!response.insert_text.is_empty());
         Ok(())
     }
 
     #[tokio::test]
     async fn anthropic_chat_do_generate() -> anyhow::Result<()> {
-        // let configuration: config::Anthropic = serde_json::from_value(json!({
-        //     "chat_endpoint": "https://api.anthropic.com/v1/messages",
-        //     "model": "claude-3-haiku-20240307",
-        //     "auth_token_env_var_name": "ANTHROPIC_API_KEY",
-        //     "chat": {
-        //         "generation": [
-        //             {
-        //                 "role": "system",
-        //                 "content": "You are a coding assistant. You job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
-        //             },
-        //             {
-        //                 "role": "user",
-        //                 "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
-        //             }
-        //         ]
-        //     },
-        //     "max_tokens": {
-        //         "completion": 16,
-        //         "generation": 64
-        //     },
-        //     "max_context": 4096
-        // }))?;
-        // let anthropic = Anthropic::new(configuration);
-        // let prompt = Prompt::default_with_cursor();
-        // let response = anthropic.do_generate(&prompt).await?;
-        // assert!(!response.generated_text.is_empty());
+        let configuration: config::Anthropic = from_value(json!({
+            "chat_endpoint": "https://api.anthropic.com/v1/messages",
+            "model": "claude-3-haiku-20240307",
+            "auth_token_env_var_name": "ANTHROPIC_API_KEY",
+        }))?;
+        let anthropic = Anthropic::new(configuration);
+        let prompt = Prompt::default_with_cursor();
+        let run_params = json!({
+            "chat": [
+                {
+                    "role": "system",
+                    "content": "You are a coding assistant. You job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
+                },
+                {
+                    "role": "user",
+                    "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
+                }
+            ],
+            "max_tokens": 64
+        });
+        let response = anthropic.do_generate(&prompt, run_params).await?;
+        assert!(!response.generated_text.is_empty());
         Ok(())
     }
 }

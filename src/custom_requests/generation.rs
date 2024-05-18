@@ -1,5 +1,6 @@
 use lsp_types::TextDocumentPositionParams;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub enum Generation {}
 
@@ -10,6 +11,8 @@ pub struct GenerationParams {
     #[serde(flatten)]
     pub text_document_position: TextDocumentPositionParams,
     pub model: String,
+    #[serde(default)]
+    pub parameters: Value,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]

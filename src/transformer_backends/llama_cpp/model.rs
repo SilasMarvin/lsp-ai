@@ -11,7 +11,7 @@ use once_cell::sync::Lazy;
 use std::{num::NonZeroU32, path::PathBuf, time::Duration};
 use tracing::{debug, info, instrument};
 
-use crate::config::{ChatMessage, Kwargs};
+use crate::config::{self, ChatMessage};
 
 use super::LLaMACPPRunParams;
 
@@ -24,34 +24,18 @@ pub struct Model {
 
 impl Model {
     #[instrument]
-    pub fn new(model_path: PathBuf, kwargs: &Kwargs) -> anyhow::Result<Self> {
-        // Get n_gpu_layers if set in kwargs
-        // As a default we set it to 1000, which should put all layers on the GPU
-        let n_gpu_layers = kwargs
-            .get("n_gpu_layers")
-            .map(|u| anyhow::Ok(u.as_u64().context("n_gpu_layers must be a number")? as u32))
-            .unwrap_or_else(|| Ok(1000))?;
-
+    pub fn new(model_path: PathBuf, config: &config::LLaMACPP) -> anyhow::Result<Self> {
         // Initialize the model_params
-        let model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
+        let model_params = LlamaModelParams::default().with_n_gpu_layers(config.n_gpu_layers);
 
         // Load the model
         debug!("Loading model at path: {:?}", model_path);
         let model = LlamaModel::load_from_file(&BACKEND, model_path, &model_params)?;
 
-        // Get n_ctx if set in kwargs
-        // As a default we set it to 2048
-        let n_ctx = kwargs
-            .get("n_ctx")
-            .map(|u| {
-                anyhow::Ok(NonZeroU32::new(
-                    u.as_u64().context("n_ctx must be a number")? as u32,
-                ))
-            })
-            .unwrap_or_else(|| Ok(NonZeroU32::new(2048)))?
-            .context("n_ctx must not be zero")?;
-
-        Ok(Model { model, n_ctx })
+        Ok(Model {
+            model,
+            n_ctx: NonZeroU32::new(config.n_ctx).context("`n_ctx` must be non zero")?,
+        })
     }
 
     #[instrument(skip(self))]

@@ -18,7 +18,7 @@ use crate::{
 use super::{file_store::FileStore, MemoryBackend, MemoryRunParams, Prompt};
 
 pub struct PostgresML {
-    configuration: Config,
+    _config: Config,
     file_store: FileStore,
     collection: Collection,
     pipeline: Pipeline,
@@ -105,7 +105,7 @@ impl PostgresML {
             }
         });
         Ok(Self {
-            configuration,
+            _config: configuration,
             file_store,
             collection,
             pipeline,

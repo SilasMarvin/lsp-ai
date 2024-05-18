@@ -38,7 +38,7 @@ const fn temperature_default() -> f32 {
 #[derive(Debug, Deserialize)]
 pub struct OpenAIRunParams {
     pub fim: Option<FIM>,
-    chat: Option<Vec<ChatMessage>>,
+    messages: Option<Vec<ChatMessage>>,
     #[serde(default = "max_tokens_default")]
     pub max_tokens: usize,
     #[serde(default = "top_p_default")]
@@ -89,7 +89,9 @@ impl OpenAI {
         } else if let Some(token) = &self.configuration.auth_token {
             Ok(token.to_string())
         } else {
-            anyhow::bail!("set `auth_token_env_var_name` or `auth_token` in `tranformer->openai` to use an OpenAI compatible API")
+            anyhow::bail!(
+                "set `auth_token_env_var_name` or `auth_token` to use an OpenAI compatible API"
+            )
         }
     }
 
@@ -105,7 +107,7 @@ impl OpenAI {
                 self.configuration
                     .completions_endpoint
                     .as_ref()
-                    .context("specify `transformer->openai->completions_endpoint` to use completions. Wanted to use `chat` instead? Please specify `transformer->openai->chat_endpoint` and `transformer->openai->chat` messages.")?,
+                    .context("specify `completions_endpoint` to use completions. Wanted to use `chat` instead? Please specify `chat_endpoint` and `messages`.")?,
             )
             .bearer_auth(token)
             .header("Content-Type", "application/json")
@@ -168,7 +170,7 @@ impl OpenAI {
         } else if let Some(choices) = res.choices {
             Ok(choices[0].message.content.clone())
         } else {
-            anyhow::bail!("Uknown error while making request to OpenAI")
+            anyhow::bail!("Unknown error while making request to OpenAI")
         }
     }
 
@@ -177,7 +179,7 @@ impl OpenAI {
         prompt: &Prompt,
         params: OpenAIRunParams,
     ) -> anyhow::Result<String> {
-        match &params.chat {
+        match &params.messages {
             Some(completion_messages) => {
                 let messages = format_chat_messages(completion_messages, prompt);
                 self.get_chat(messages, params).await
@@ -198,7 +200,6 @@ impl TransformerBackend for OpenAI {
         prompt: &Prompt,
         params: Value,
     ) -> anyhow::Result<DoCompletionResponse> {
-        // let params: OpenAIRunParams = params.try_into()?;
         let params: OpenAIRunParams = serde_json::from_value(params)?;
         let insert_text = self.do_chat_completion(prompt, params).await?;
         Ok(DoCompletionResponse { insert_text })
@@ -220,113 +221,102 @@ impl TransformerBackend for OpenAI {
     async fn do_generate_stream(
         &self,
         request: &GenerationStreamRequest,
-        params: Value,
+        _params: Value,
     ) -> anyhow::Result<DoGenerationStreamResponse> {
-        unimplemented!()
+        anyhow::bail!("GenerationStream is not yet implemented")
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use serde_json::{from_value, json};
 
     #[tokio::test]
     async fn openai_completion_do_completion() -> anyhow::Result<()> {
-        // let configuration: config::OpenAI = serde_json::from_value(json!({
-        //     "completions_endpoint": "https://api.openai.com/v1/completions",
-        //     "model": "gpt-3.5-turbo-instruct",
-        //     "auth_token_env_var_name": "OPENAI_API_KEY",
-        //     "max_tokens": {
-        //         "completion": 16,
-        //         "generation": 64
-        //     },
-        //     "max_context": 4096
-        // }))?;
-        // let openai = OpenAI::new(configuration);
-        // let prompt = Prompt::default_without_cursor();
-        // let response = openai.do_completion(&prompt).await?;
-        // assert!(!response.insert_text.is_empty());
+        let configuration: config::OpenAI = from_value(json!({
+            "completions_endpoint": "https://api.openai.com/v1/completions",
+            "model": "gpt-3.5-turbo-instruct",
+            "auth_token_env_var_name": "OPENAI_API_KEY",
+        }))?;
+        let openai = OpenAI::new(configuration);
+        let prompt = Prompt::default_without_cursor();
+        let run_params = json!({
+            "max_tokens": 64
+        });
+        let response = openai.do_completion(&prompt, run_params).await?;
+        assert!(!response.insert_text.is_empty());
         Ok(())
     }
 
     #[tokio::test]
     async fn openai_chat_do_completion() -> anyhow::Result<()> {
-        // let configuration: config::OpenAI = serde_json::from_value(json!({
-        //     "chat_endpoint": "https://api.openai.com/v1/chat/completions",
-        //     "model": "gpt-3.5-turbo",
-        //     "auth_token_env_var_name": "OPENAI_API_KEY",
-        //     "chat": {
-        //         "completion": [
-        //             {
-        //                 "role": "system",
-        //                 "content": "You are a coding assistant. Your job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
-        //             },
-        //             {
-        //                 "role": "user",
-        //                 "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
-        //             }
-        //         ],
-        //     },
-        //     "max_tokens": {
-        //         "completion": 16,
-        //         "generation": 64
-        //     },
-        //     "max_context": 4096
-        // }))?;
-        // let openai = OpenAI::new(configuration);
-        // let prompt = Prompt::default_with_cursor();
-        // let response = openai.do_completion(&prompt).await?;
-        // assert!(!response.insert_text.is_empty());
+        let configuration: config::OpenAI = serde_json::from_value(json!({
+            "chat_endpoint": "https://api.openai.com/v1/chat/completions",
+            "model": "gpt-3.5-turbo",
+            "auth_token_env_var_name": "OPENAI_API_KEY",
+        }))?;
+        let openai = OpenAI::new(configuration);
+        let prompt = Prompt::default_with_cursor();
+        let run_params = json!({
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a coding assistant. Your job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
+                },
+                {
+                    "role": "user",
+                    "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
+                }
+            ],
+            "max_tokens": 64
+        });
+        let response = openai.do_completion(&prompt, run_params).await?;
+        assert!(!response.insert_text.is_empty());
         Ok(())
     }
 
     #[tokio::test]
     async fn openai_completion_do_generate() -> anyhow::Result<()> {
-        // let configuration: config::OpenAI = serde_json::from_value(json!({
-        //     "completions_endpoint": "https://api.openai.com/v1/completions",
-        //     "model": "gpt-3.5-turbo-instruct",
-        //     "auth_token_env_var_name": "OPENAI_API_KEY",
-        //     "max_tokens": {
-        //         "completion": 16,
-        //         "generation": 64
-        //     },
-        //     "max_context": 4096
-        // }))?;
-        // let openai = OpenAI::new(configuration);
-        // let prompt = Prompt::default_without_cursor();
-        // let response = openai.do_generate(&prompt).await?;
-        // assert!(!response.generated_text.is_empty());
+        let configuration: config::OpenAI = from_value(json!({
+            "completions_endpoint": "https://api.openai.com/v1/completions",
+            "model": "gpt-3.5-turbo-instruct",
+            "auth_token_env_var_name": "OPENAI_API_KEY",
+        }))?;
+        let openai = OpenAI::new(configuration);
+        let prompt = Prompt::default_without_cursor();
+        let run_params = json!({
+            "max_tokens": 64
+        });
+        let response = openai.do_generate(&prompt, run_params).await?;
+        assert!(!response.generated_text.is_empty());
         Ok(())
     }
 
     #[tokio::test]
     async fn openai_chat_do_generate() -> anyhow::Result<()> {
-        // let configuration: config::OpenAI = serde_json::from_value(json!({
-        //     "chat_endpoint": "https://api.openai.com/v1/chat/completions",
-        //     "model": "gpt-3.5-turbo",
-        //     "auth_token_env_var_name": "OPENAI_API_KEY",
-        //     "chat": {
-        //         "generation": [
-        //             {
-        //                 "role": "system",
-        //                 "content": "You are a coding assistant. Your job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
-        //             },
-        //             {
-        //                 "role": "user",
-        //                 "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
-        //             }
-        //         ]
-        //     },
-        //     "max_tokens": {
-        //         "completion": 16,
-        //         "generation": 64
-        //     },
-        //     "max_context": 4096
-        // }))?;
-        // let openai = OpenAI::new(configuration);
-        // let prompt = Prompt::default_with_cursor();
-        // let response = openai.do_generate(&prompt).await?;
-        // assert!(!response.generated_text.is_empty());
+        let configuration: config::OpenAI = serde_json::from_value(json!({
+            "chat_endpoint": "https://api.openai.com/v1/chat/completions",
+            "model": "gpt-3.5-turbo",
+            "auth_token_env_var_name": "OPENAI_API_KEY",
+        }))?;
+        let openai = OpenAI::new(configuration);
+        let prompt = Prompt::default_with_cursor();
+        let run_params = json!({
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a coding assistant. Your job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
+                },
+                {
+                    "role": "user",
+                    "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
+                }
+            ],
+            "max_tokens": 64
+        });
+        let response = openai.do_generate(&prompt, run_params).await?;
+        assert!(!response.generated_text.is_empty());
         Ok(())
     }
 }

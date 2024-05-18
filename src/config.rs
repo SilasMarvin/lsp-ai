@@ -3,12 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-const DEFAULT_LLAMA_CPP_N_CTX: usize = 1024;
-const DEFAULT_OPENAI_MAX_CONTEXT_LENGTH: usize = 2048;
-
-const DEFAULT_MAX_COMPLETION_TOKENS: usize = 16;
-const DEFAULT_MAX_GENERATION_TOKENS: usize = 64;
-
 pub type Kwargs = HashMap<String, Value>;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -19,27 +13,16 @@ pub enum ValidMemoryBackend {
     PostgresML(PostgresML),
 }
 
-impl Default for ValidMemoryBackend {
-    fn default() -> Self {
-        ValidMemoryBackend::FileStore(FileStore::default())
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum ValidModel {
+    #[cfg(feature = "llamacpp")]
     #[serde(rename = "llamacpp")]
     LLaMACPP(LLaMACPP),
     #[serde(rename = "openai")]
     OpenAI(OpenAI),
     #[serde(rename = "anthropic")]
     Anthropic(Anthropic),
-}
-
-impl Default for ValidModel {
-    fn default() -> Self {
-        ValidModel::LLaMACPP(LLaMACPP::default())
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -65,21 +48,6 @@ pub struct FIM {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct MaxTokens {
-    pub completion: usize,
-    pub generation: usize,
-}
-
-impl Default for MaxTokens {
-    fn default() -> Self {
-        Self {
-            completion: DEFAULT_MAX_COMPLETION_TOKENS,
-            generation: DEFAULT_MAX_GENERATION_TOKENS,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
 pub struct PostgresML {
     pub database_url: Option<String>,
     #[serde(default)]
@@ -98,35 +66,23 @@ pub struct Model {
     pub name: Option<String>,
 }
 
+const fn n_gpu_layers_default() -> u32 {
+    1000
+}
+
+const fn n_ctx_default() -> u32 {
+    1000
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct LLaMACPP {
     // The model to use
     #[serde(flatten)]
     pub model: Model,
-
-    // TODO: Remove Kwargs here and replace with concrete types
-    // Kwargs passed to LlamaCPP
-    #[serde(flatten)]
-    pub kwargs: Kwargs,
-}
-
-impl Default for LLaMACPP {
-    fn default() -> Self {
-        Self {
-            model: Model {
-                repository: "stabilityai/stable-code-3b".to_string(),
-                name: Some("stable-code-3b-Q5_K_M.gguf".to_string()),
-            },
-            // fim: Some(FIM {
-            //     start: "<fim_prefix>".to_string(),
-            //     middle: "<fim_suffix>".to_string(),
-            //     end: "<fim_middle>".to_string(),
-            // }),
-            // max_tokens: MaxTokens::default(),
-            // chat: None,
-            kwargs: Kwargs::default(),
-        }
-    }
+    #[serde(default = "n_gpu_layers_default")]
+    pub n_gpu_layers: u32,
+    #[serde(default = "n_ctx_default")]
+    pub n_ctx: u32,
 }
 
 const fn api_max_requests_per_second_default() -> f32 {
@@ -170,46 +126,17 @@ pub struct Completion {
     // The model key to use
     pub model: String,
 
-    // // Model args
-    // pub max_new_tokens: Option<usize>,
-    // pub presence_penalty: Option<f32>,
-    // pub frequency_penalty: Option<f32>,
-    // pub top_p: Option<f32>,
-    // pub temperature: Option<f32>,
-    // pub max_context_length: Option<usize>,
-
-    // // FIM args
-    // pub fim: Option<FIM>,
-
-    // // Chat args
-    // pub chat: Option<Vec<ChatMessage>>,
-    // pub chat_template: Option<String>,
-    // pub chat_format: Option<String>,
-    pub kwargs: HashMap<String, Value>,
+    // Args are deserialized by the backend using them
+    #[serde(flatten)]
+    #[serde(default)]
+    pub kwargs: Kwargs,
 }
 
-impl Default for Completion {
-    fn default() -> Self {
-        Self {
-            model: "default_model".to_string(),
-            // fim: Some(FIM {
-            //     start: "<fim_prefix>".to_string(),
-            //     middle: "<fim_suffix>".to_string(),
-            //     end: "<fim_middle>".to_string(),
-            // }),
-            ..Default::default()
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ValidConfig {
-    #[serde(default)]
     pub memory: ValidMemoryBackend,
-    #[serde(default)]
     pub models: HashMap<String, ValidModel>,
-    #[serde(default)]
-    pub completion: Completion,
+    pub completion: Option<Completion>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -234,7 +161,7 @@ impl Config {
             .remove("initializationOptions");
         let valid_args = match configuration_args {
             Some(configuration_args) => serde_json::from_value(configuration_args)?,
-            None => ValidConfig::default(),
+            None => anyhow::bail!("lsp-ai does not currently provide a default configuration. Please pass a configuration. See https://github.com/SilasMarvin/lsp-ai for configuration options and examples"),
         };
         let client_params: ValidClientParams = serde_json::from_value(args)?;
         Ok(Self {
@@ -247,17 +174,32 @@ impl Config {
     // Helpers for the backends ///////////
     ///////////////////////////////////////
 
-    pub fn get_completion_transformer_max_requests_per_second(&self) -> f32 {
-        // We can unwrap here as we verified this exists in the new function
+    pub fn is_completions_enabled(&self) -> bool {
+        self.config.completion.is_some()
+    }
+
+    pub fn get_completion_transformer_max_requests_per_second(&self) -> anyhow::Result<f32> {
         match &self
             .config
             .models
-            .get(&self.config.completion.model)
-            .unwrap()
-        {
-            ValidModel::LLaMACPP(_) => 1.,
-            ValidModel::OpenAI(openai) => openai.max_requests_per_second,
-            ValidModel::Anthropic(anthropic) => anthropic.max_requests_per_second,
+            .get(
+                &self
+                    .config
+                    .completion
+                    .as_ref()
+                    .context("Completions is not enabled")?
+                    .model,
+            )
+            .with_context(|| {
+                format!(
+                    "`{}` model not found in `models` config",
+                    &self.config.completion.as_ref().unwrap().model
+                )
+            })? {
+            #[cfg(feature = "llamacpp")]
+            ValidModel::LLaMACPP(_) => Ok(1.),
+            ValidModel::OpenAI(openai) => Ok(openai.max_requests_per_second),
+            ValidModel::Anthropic(anthropic) => Ok(anthropic.max_requests_per_second),
         }
     }
 }
@@ -290,6 +232,7 @@ mod test {
                         "middle": "<fim_suffix>",
                         "end": "<fim_middle>"
                     },
+                    "max_context": 1024,
                     "max_new_tokens": 32,
                 }
             }
@@ -314,7 +257,7 @@ mod test {
                 },
                 "completion": {
                     "model": "model1",
-                    "chat": [
+                    "messages": [
                         {
                             "role": "system",
                             "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{CONTEXT}",

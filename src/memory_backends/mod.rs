@@ -15,9 +15,9 @@ const fn max_context_length_default() -> usize {
 }
 
 #[derive(Clone, Deserialize)]
-struct MemoryRunParams {
+pub struct MemoryRunParams {
     pub fim: Option<FIM>,
-    pub chat: Option<Vec<ChatMessage>>,
+    pub messages: Option<Vec<ChatMessage>>,
     #[serde(default = "max_context_length_default")]
     pub max_context_length: usize,
 }

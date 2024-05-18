@@ -63,6 +63,16 @@ pub enum WorkerRequest {
     GenerationStream(GenerationStreamRequest),
 }
 
+impl WorkerRequest {
+    fn get_id(&self) -> RequestId {
+        match self {
+            WorkerRequest::Completion(r) => r.id.clone(),
+            WorkerRequest::Generation(r) => r.id.clone(),
+            WorkerRequest::GenerationStream(r) => r.id.clone(),
+        }
+    }
+}
+
 pub struct DoCompletionResponse {
     pub insert_text: String,
 }
@@ -73,122 +83,6 @@ pub struct DoGenerationResponse {
 
 pub struct DoGenerationStreamResponse {
     pub generated_text: String,
-}
-
-#[instrument(skip(config, transformer_backend, memory_backend_tx, connection))]
-async fn do_task(
-    transformer_backend: Arc<Box<dyn TransformerBackend + Send + Sync>>,
-    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
-    request: WorkerRequest,
-    connection: Arc<Connection>,
-    config: Config,
-) -> anyhow::Result<()> {
-    let response = match request {
-        WorkerRequest::Completion(request) => {
-            match do_completion(transformer_backend, memory_backend_tx, &request, &config).await {
-                Ok(r) => r,
-                Err(e) => Response {
-                    id: request.id,
-                    result: None,
-                    error: Some(e.to_response_error(-32603)),
-                },
-            }
-        }
-        WorkerRequest::Generation(request) => {
-            match do_generate(transformer_backend, memory_backend_tx, &request).await {
-                Ok(r) => r,
-                Err(e) => Response {
-                    id: request.id,
-                    result: None,
-                    error: Some(e.to_response_error(-32603)),
-                },
-            }
-        }
-        WorkerRequest::GenerationStream(_) => {
-            panic!("Streaming is not yet supported")
-        }
-    };
-    connection
-        .sender
-        .send(Message::Response(response))
-        .expect("Error sending response");
-    Ok(())
-}
-
-fn do_run(
-    transformer_backends: HashMap<String, Box<dyn TransformerBackend + Send + Sync>>,
-    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
-    transformer_rx: std::sync::mpsc::Receiver<WorkerRequest>,
-    connection: Arc<Connection>,
-    config: Config,
-) -> anyhow::Result<()> {
-    let transformer_backends: HashMap<String, Arc<Box<dyn TransformerBackend + Send + Sync>>> =
-        transformer_backends
-            .into_iter()
-            .map(|(key, backend)| (key, Arc::new(backend)))
-            .collect();
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4)
-        .enable_all()
-        .build()?;
-
-    let max_requests_per_second = config.get_completion_transformer_max_requests_per_second();
-    let mut last_completion_request_time = SystemTime::now();
-    let mut last_completion_request = None;
-
-    let dispatch_request = move |request| {
-        let thread_transformer_backend = transformer_backends
-            .get(&config.config.completion.model)
-            .clone()
-            .with_context(|| format!("can't find model: {}", config.config.completion.model))?
-            .clone();
-        let thread_config = config.clone();
-        let thread_memory_backend_tx = memory_backend_tx.clone();
-        let thread_connection = connection.clone();
-        runtime.spawn(async move {
-            if let Err(e) = do_task(
-                thread_transformer_backend,
-                thread_memory_backend_tx,
-                request,
-                thread_connection,
-                thread_config,
-            )
-            .await
-            {
-                error!("transformer worker task: {e}")
-            }
-        });
-        anyhow::Ok(())
-    };
-
-    loop {
-        // We want to rate limit completions without dropping the last rate limited request
-        let request = transformer_rx.recv_timeout(Duration::from_millis(5));
-
-        match request {
-            Ok(request) => match request {
-                WorkerRequest::Completion(_) => last_completion_request = Some(request),
-                _ => {
-                    dispatch_request(request)?;
-                }
-            },
-            Err(RecvTimeoutError::Disconnected) => anyhow::bail!("channel disconnected"),
-            _ => {}
-        }
-
-        if SystemTime::now()
-            .duration_since(last_completion_request_time)?
-            .as_secs_f32()
-            < 1. / max_requests_per_second
-        {
-            continue;
-        }
-
-        if let Some(request) = last_completion_request.take() {
-            last_completion_request_time = SystemTime::now();
-            dispatch_request(request)?;
-        }
-    }
 }
 
 pub fn run(
@@ -209,17 +103,151 @@ pub fn run(
     }
 }
 
+fn do_run(
+    transformer_backends: HashMap<String, Box<dyn TransformerBackend + Send + Sync>>,
+    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
+    transformer_rx: std::sync::mpsc::Receiver<WorkerRequest>,
+    connection: Arc<Connection>,
+    config: Config,
+) -> anyhow::Result<()> {
+    let transformer_backends = Arc::new(transformer_backends);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()?;
+
+    // If they have disabled completions, this function will fail. We set it to MIN_POSITIVE to never process a completions request
+    let max_requests_per_second = config
+        .get_completion_transformer_max_requests_per_second()
+        .unwrap_or(f32::MIN_POSITIVE);
+    let mut last_completion_request_time = SystemTime::now();
+    let mut last_completion_request = None;
+
+    let run_dispatch_request = |request| {
+        let task_connection = connection.clone();
+        let task_transformer_backends = transformer_backends.clone();
+        let task_memory_backend_tx = memory_backend_tx.clone();
+        let task_config = config.clone();
+        runtime.spawn(async move {
+            dispatch_request(
+                request,
+                task_connection,
+                task_transformer_backends,
+                task_memory_backend_tx,
+                task_config,
+            )
+            .await;
+        });
+    };
+
+    loop {
+        // We want to rate limit completions without dropping the last rate limited request
+        let request = transformer_rx.recv_timeout(Duration::from_millis(5));
+
+        match request {
+            Ok(request) => match request {
+                WorkerRequest::Completion(_) => last_completion_request = Some(request),
+                _ => run_dispatch_request(request),
+            },
+            Err(RecvTimeoutError::Disconnected) => anyhow::bail!("channel disconnected"),
+            _ => {}
+        }
+
+        if SystemTime::now()
+            .duration_since(last_completion_request_time)?
+            .as_secs_f32()
+            < 1. / max_requests_per_second
+        {
+            continue;
+        }
+
+        if let Some(request) = last_completion_request.take() {
+            last_completion_request_time = SystemTime::now();
+            run_dispatch_request(request);
+        }
+    }
+}
+
+#[instrument(skip(connection, transformer_backends, memory_backend_tx, config))]
+async fn dispatch_request(
+    request: WorkerRequest,
+    connection: Arc<Connection>,
+    transformer_backends: Arc<HashMap<String, Box<dyn TransformerBackend + Send + Sync>>>,
+    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
+    config: Config,
+) {
+    let response = match generate_response(
+        request.clone(),
+        transformer_backends,
+        memory_backend_tx,
+        config,
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(e) => {
+            error!("generating response: {e}");
+            Response {
+                id: request.get_id(),
+                result: None,
+                error: Some(e.to_response_error(-32603)),
+            }
+        }
+    };
+
+    if let Err(e) = connection.sender.send(Message::Response(response)) {
+        error!("sending response: {e}");
+    }
+}
+
+async fn generate_response(
+    request: WorkerRequest,
+    transformer_backends: Arc<HashMap<String, Box<dyn TransformerBackend + Send + Sync>>>,
+    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
+    config: Config,
+) -> anyhow::Result<Response> {
+    match request {
+        WorkerRequest::Completion(request) => {
+            let completion_config = config
+                .config
+                .completion
+                .as_ref()
+                .context("Completions is none")?;
+            let transformer_backend = transformer_backends
+                .get(&completion_config.model)
+                .clone()
+                .with_context(|| format!("can't find model: {}", &completion_config.model))?;
+            do_completion(transformer_backend, memory_backend_tx, &request, &config).await
+        }
+        WorkerRequest::Generation(request) => {
+            let transformer_backend = transformer_backends
+                .get(&request.params.model)
+                .clone()
+                .with_context(|| format!("can't find model: {}", &request.params.model))?;
+            do_generate(transformer_backend, memory_backend_tx, &request).await
+        }
+        WorkerRequest::GenerationStream(_) => {
+            anyhow::bail!("Streaming is not yet supported")
+        }
+    }
+}
+
 async fn do_completion(
-    transformer_backend: Arc<Box<dyn TransformerBackend + Send + Sync>>,
+    transformer_backend: &Box<dyn TransformerBackend + Send + Sync>,
     memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
     request: &CompletionRequest,
     config: &Config,
 ) -> anyhow::Result<Response> {
-    // TODO: Fix this
-    // we need to be subtracting the completion / generation tokens from max_context_length
-    // not sure if we should be doing that for the chat maybe leave a note here for that?
-
-    let params = serde_json::to_value(config.config.completion.kwargs.clone()).unwrap();
+    let params = serde_json::to_value(
+        config
+            .config
+            .completion
+            .as_ref()
+            .context("Completions is None")?
+            .kwargs
+            .clone(),
+    )
+    .unwrap();
 
     let (tx, rx) = oneshot::channel();
     memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
@@ -270,27 +298,28 @@ async fn do_completion(
 }
 
 async fn do_generate(
-    transformer_backend: Arc<Box<dyn TransformerBackend + Send + Sync>>,
+    transformer_backend: &Box<dyn TransformerBackend + Send + Sync>,
     memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
     request: &GenerationRequest,
 ) -> anyhow::Result<Response> {
-    todo!()
-    // let (tx, rx) = oneshot::channel();
-    // memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
-    //     request.params.text_document_position.clone(),
-    //     PromptForType::Completion,
-    //     tx,
-    // )))?;
-    // let prompt = rx.await?;
+    let params = serde_json::to_value(request.params.parameters.clone()).unwrap();
 
-    // let response = transformer_backend.do_generate(&prompt).await?;
-    // let result = GenerateResult {
-    //     generated_text: response.generated_text,
-    // };
-    // let result = serde_json::to_value(result).unwrap();
-    // Ok(Response {
-    //     id: request.id.clone(),
-    //     result: Some(result),
-    //     error: None,
-    // })
+    let (tx, rx) = oneshot::channel();
+    memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
+        request.params.text_document_position.clone(),
+        params.clone(),
+        tx,
+    )))?;
+    let prompt = rx.await?;
+
+    let response = transformer_backend.do_generate(&prompt, params).await?;
+    let result = GenerateResult {
+        generated_text: response.generated_text,
+    };
+    let result = serde_json::to_value(result).unwrap();
+    Ok(Response {
+        id: request.id.clone(),
+        result: Some(result),
+        error: None,
+    })
 }
