@@ -62,17 +62,18 @@ impl FileStore {
             .iter()
             .filter(|f| **f != current_document_uri)
         {
-            let needed = characters.saturating_sub(rope.len_chars());
+            let needed = characters.saturating_sub(rope.len_chars() + 1);
             if needed == 0 {
                 break;
             }
             let file_map = self.file_map.lock();
             let r = file_map.get(file).context("Error file not found")?;
-            let slice_max = needed.min(r.len_chars());
+            let slice_max = needed.min(r.len_chars() + 1);
             let rope_str_slice = r
-                .get_slice(0..slice_max)
+                .get_slice(0..slice_max - 1)
                 .context("Error getting slice")?
                 .to_string();
+            rope.insert(0, "\n");
             rope.insert(0, &rope_str_slice);
             cursor_index += slice_max;
         }
@@ -225,13 +226,293 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    async fn renamed_file(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+    async fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         for file_rename in params.files {
             let mut file_map = self.file_map.lock();
             if let Some(rope) = file_map.remove(&file_rename.old_uri) {
                 file_map.insert(file_rename.new_uri, rope);
             }
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lsp_types::{
+        DidOpenTextDocumentParams, FileRename, Position, Range, RenameFilesParams,
+        TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+        VersionedTextDocumentIdentifier,
+    };
+    use serde_json::json;
+
+    fn generate_base_file_store() -> anyhow::Result<FileStore> {
+        let config = Config::default_with_file_store_without_models();
+        let file_store_config = if let config::ValidMemoryBackend::FileStore(file_store_config) =
+            config.config.memory.clone()
+        {
+            file_store_config
+        } else {
+            anyhow::bail!("requires a file_store_config")
+        };
+        Ok(FileStore::new(file_store_config, config))
+    }
+
+    fn generate_filler_text_document(uri: Option<&str>, text: Option<&str>) -> TextDocumentItem {
+        let uri = uri.unwrap_or("file://filler/");
+        let text = text.unwrap_or("Here is the document body");
+        TextDocumentItem {
+            uri: reqwest::Url::parse(uri).unwrap(),
+            language_id: "filler".to_string(),
+            version: 0,
+            text: text.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn can_open_document() -> anyhow::Result<()> {
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: generate_filler_text_document(None, None),
+        };
+        let file_store = generate_base_file_store()?;
+        file_store.opened_text_document(params).await?;
+        let file = file_store
+            .file_map
+            .lock()
+            .get("file://filler/")
+            .unwrap()
+            .clone();
+        assert_eq!(file.to_string(), "Here is the document body");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_rename_document() -> anyhow::Result<()> {
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: generate_filler_text_document(None, None),
+        };
+        let file_store = generate_base_file_store()?;
+        file_store.opened_text_document(params).await?;
+
+        let params = RenameFilesParams {
+            files: vec![FileRename {
+                old_uri: "file://filler/".to_string(),
+                new_uri: "file://filler2/".to_string(),
+            }],
+        };
+        file_store.renamed_files(params).await?;
+
+        let file = file_store
+            .file_map
+            .lock()
+            .get("file://filler2/")
+            .unwrap()
+            .clone();
+        assert_eq!(file.to_string(), "Here is the document body");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_change_document() -> anyhow::Result<()> {
+        let text_document = generate_filler_text_document(None, None);
+
+        let params = DidOpenTextDocumentParams {
+            text_document: text_document.clone(),
+        };
+        let file_store = generate_base_file_store()?;
+        file_store.opened_text_document(params).await?;
+
+        let params = lsp_types::DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: text_document.uri.clone(),
+                version: 1,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 0,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 3,
+                    },
+                }),
+                range_length: None,
+                text: "a".to_string(),
+            }],
+        };
+        file_store.changed_text_document(params).await?;
+        let file = file_store
+            .file_map
+            .lock()
+            .get("file://filler/")
+            .unwrap()
+            .clone();
+        assert_eq!(file.to_string(), "Hae is the document body");
+
+        let params = lsp_types::DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: text_document.uri,
+                version: 1,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: "abc".to_string(),
+            }],
+        };
+        file_store.changed_text_document(params).await?;
+        let file = file_store
+            .file_map
+            .lock()
+            .get("file://filler/")
+            .unwrap()
+            .clone();
+        assert_eq!(file.to_string(), "abc");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_build_prompt() -> anyhow::Result<()> {
+        let text_document = generate_filler_text_document(
+            None,
+            Some(
+                r#"Document Top
+Here is a more complicated document
+
+Some text
+
+The end with a trailing new line
+"#,
+            ),
+        );
+
+        // Test basic completion
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: text_document.clone(),
+        };
+        let file_store = generate_base_file_store()?;
+        file_store.opened_text_document(params).await?;
+
+        let params = json!({});
+        let prompt = file_store
+            .build_prompt(
+                &TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: text_document.uri.clone(),
+                    },
+                    position: Position {
+                        line: 0,
+                        character: 10,
+                    },
+                },
+                params,
+            )
+            .await?;
+        assert_eq!(prompt.context, "");
+        assert_eq!("Document T", prompt.code);
+
+        // Test FIM
+        let params = json!({
+            "fim": {
+                "start": "SS",
+                "middle": "MM",
+                "end": "EE"
+            }
+        });
+        let prompt = file_store
+            .build_prompt(
+                &TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: text_document.uri.clone(),
+                    },
+                    position: Position {
+                        line: 0,
+                        character: 10,
+                    },
+                },
+                params,
+            )
+            .await?;
+        assert_eq!(prompt.context, "");
+        let text = r#"SSDocument TMMop
+Here is a more complicated document
+
+Some text
+
+The end with a trailing new line
+EE"#
+        .to_string();
+        assert_eq!(text, prompt.code);
+
+        // Test chat
+        let params = json!({
+            "messages": []
+        });
+        let prompt = file_store
+            .build_prompt(
+                &TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: text_document.uri.clone(),
+                    },
+                    position: Position {
+                        line: 0,
+                        character: 10,
+                    },
+                },
+                params,
+            )
+            .await?;
+        assert_eq!(prompt.context, "");
+        let text = r#"Document T<CURSOR>op
+Here is a more complicated document
+
+Some text
+
+The end with a trailing new line
+"#
+        .to_string();
+        assert_eq!(text, prompt.code);
+
+        // Test multi-file
+        let text_document2 = generate_filler_text_document(
+            Some("file://filler2"),
+            Some(
+                r#"Document Top2
+Here is a more complicated document
+
+Some text
+
+The end with a trailing new line
+"#,
+            ),
+        );
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: text_document2.clone(),
+        };
+        file_store.opened_text_document(params).await?;
+
+        let params = json!({});
+        let prompt = file_store
+            .build_prompt(
+                &TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: text_document.uri.clone(),
+                    },
+                    position: Position {
+                        line: 0,
+                        character: 10,
+                    },
+                },
+                params,
+            )
+            .await?;
+        assert_eq!(prompt.context, "");
+        assert_eq!(format!("{}\nDocument T", text_document2.text), prompt.code);
+
         Ok(())
     }
 }

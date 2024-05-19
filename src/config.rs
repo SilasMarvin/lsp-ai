@@ -26,12 +26,14 @@ pub enum ValidModel {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Chat {
     pub completion: Option<Vec<ChatMessage>>,
     pub generation: Option<Vec<ChatMessage>>,
@@ -41,6 +43,7 @@ pub struct Chat {
 
 #[derive(Clone, Debug, Deserialize)]
 #[allow(clippy::upper_case_acronyms)]
+#[serde(deny_unknown_fields)]
 pub struct FIM {
     pub start: String,
     pub middle: String,
@@ -48,6 +51,7 @@ pub struct FIM {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostgresML {
     pub database_url: Option<String>,
     #[serde(default)]
@@ -55,12 +59,14 @@ pub struct PostgresML {
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct FileStore {
     #[serde(default)]
     pub crawl: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Model {
     pub repository: String,
     pub name: Option<String>,
@@ -75,6 +81,7 @@ const fn n_ctx_default() -> u32 {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LLaMACPP {
     // The model to use
     #[serde(flatten)]
@@ -90,6 +97,7 @@ const fn api_max_requests_per_second_default() -> f32 {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAI {
     // The auth token env var name
     pub auth_token_env_var_name: Option<String>,
@@ -106,6 +114,7 @@ pub struct OpenAI {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Anthropic {
     // The auth token env var name
     pub auth_token_env_var_name: Option<String>,
@@ -127,12 +136,12 @@ pub struct Completion {
     pub model: String,
 
     // Args are deserialized by the backend using them
-    #[serde(flatten)]
     #[serde(default)]
-    pub kwargs: Kwargs,
+    pub parameters: Kwargs,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ValidConfig {
     pub memory: ValidMemoryBackend,
     pub models: HashMap<String, ValidModel>,
@@ -204,12 +213,31 @@ impl Config {
     }
 }
 
+// This makes testing much easier.
+#[cfg(test)]
+impl Config {
+    pub fn default_with_file_store_without_models() -> Self {
+        Self {
+            config: ValidConfig {
+                memory: ValidMemoryBackend::FileStore(FileStore { crawl: false }),
+                models: HashMap::new(),
+                completion: None,
+            },
+            _client_params: ValidClientParams {
+                _root_uri: None,
+                _workspace_folders: None,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use serde_json::json;
 
     #[test]
+    #[cfg(feature = "llamacpp")]
     fn llama_cpp_config() {
         let args = json!({
             "initializationOptions": {
@@ -227,13 +255,15 @@ mod test {
                 },
                 "completion": {
                     "model": "model1",
-                    "fim": {
-                        "start": "<fim_prefix>",
-                        "middle": "<fim_suffix>",
-                        "end": "<fim_middle>"
-                    },
-                    "max_context": 1024,
-                    "max_new_tokens": 32,
+                    "parameters": {
+                        "fim": {
+                            "start": "<fim_prefix>",
+                            "middle": "<fim_suffix>",
+                            "end": "<fim_middle>"
+                        },
+                        "max_context": 1024,
+                        "max_new_tokens": 32,
+                    }
                 }
             }
         });
@@ -257,17 +287,52 @@ mod test {
                 },
                 "completion": {
                     "model": "model1",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{CONTEXT}",
-                        },
-                        {
-                            "role": "user",
-                            "content": "Complete the following code: \n\n{CODE}"
-                        }
-                    ],
-                    "max_new_tokens": 32,
+                    "parameters": {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "Test",
+                            },
+                            {
+                                "role": "user",
+                                "content": "Test {CONTEXT} - {CODE}"
+                            }
+                        ],
+                        "max_new_tokens": 32,
+                    }
+                }
+            }
+        });
+        Config::new(args).unwrap();
+    }
+
+    #[test]
+    fn anthropic_config() {
+        let args = json!({
+            "initializationOptions": {
+                "memory": {
+                    "file_store": {}
+                },
+                "models": {
+                    "model1": {
+                        "type": "anthropic",
+                        "completions_endpoint": "https://api.anthropic.com/v1/messages",
+                        "model": "claude-3-haiku-20240307",
+                        "auth_token_env_var_name": "ANTHROPIC_API_KEY",
+                    },
+                },
+                "completion": {
+                    "model": "model1",
+                    "parameters": {
+                        "system": "Test",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": "Test {CONTEXT} - {CODE}"
+                            }
+                        ],
+                        "max_new_tokens": 32,
+                    }
                 }
             }
         });

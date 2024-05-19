@@ -24,6 +24,7 @@ const fn max_new_tokens_default() -> usize {
     32
 }
 
+// NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
 #[derive(Debug, Deserialize)]
 pub struct LLaMACPPRunParams {
     pub fim: Option<FIM>,
@@ -119,28 +120,6 @@ impl TransformerBackend for LLaMACPP {
 mod test {
     use super::*;
     use serde_json::json;
-
-    // // "completion": [
-    // //     {
-    // //         "role": "system",
-    // //         "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. Keep your response brief. Do not produce any text besides code. \n\n{context}",
-    // //     },
-    // //     {
-    // //         "role": "user",
-    // //         "content": "Complete the following code: \n\n{code}"
-    // //     }
-    // // ],
-    // // "generation": [
-    // //     {
-    // //         "role": "system",
-    // //         "content": "You are a code completion chatbot. Use the following context to complete the next segement of code. \n\n{context}",
-    // //     },
-    // //     {
-    // //         "role": "user",
-    // //         "content": "Complete the following code: \n\n{code}"
-    // //     }
-    // // ],
-    // "chat_template": "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n<|EOT|>\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
 
     #[tokio::test]
     async fn llama_cpp_do_completion() -> anyhow::Result<()> {

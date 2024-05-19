@@ -80,7 +80,7 @@ async fn do_task(
         WorkerRequest::DidChangeTextDocument(params) => {
             memory_backend.changed_text_document(params).await?;
         }
-        WorkerRequest::DidRenameFiles(params) => memory_backend.renamed_file(params).await?,
+        WorkerRequest::DidRenameFiles(params) => memory_backend.renamed_files(params).await?,
     }
     anyhow::Ok(())
 }

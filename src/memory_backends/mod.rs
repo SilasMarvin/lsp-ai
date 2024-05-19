@@ -44,7 +44,7 @@ pub trait MemoryBackend {
         &self,
         params: DidChangeTextDocumentParams,
     ) -> anyhow::Result<()>;
-    async fn renamed_file(&self, params: RenameFilesParams) -> anyhow::Result<()>;
+    async fn renamed_files(&self, params: RenameFilesParams) -> anyhow::Result<()>;
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,

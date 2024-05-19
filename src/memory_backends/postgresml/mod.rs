@@ -214,7 +214,7 @@ impl MemoryBackend for PostgresML {
     }
 
     #[instrument(skip(self))]
-    async fn renamed_file(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+    async fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         let mut task_collection = self.collection.clone();
         let task_params = params.clone();
         for file in task_params.files {
@@ -240,6 +240,6 @@ impl MemoryBackend for PostgresML {
                 .await
                 .expect("PGML - Error adding pipeline to collection");
         }
-        self.file_store.renamed_file(params).await
+        self.file_store.renamed_files(params).await
     }
 }

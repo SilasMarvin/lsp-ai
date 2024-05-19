@@ -244,7 +244,7 @@ async fn do_completion(
             .completion
             .as_ref()
             .context("Completions is None")?
-            .kwargs
+            .parameters
             .clone(),
     )
     .unwrap();
@@ -303,6 +303,8 @@ async fn do_generate(
     request: &GenerationRequest,
 ) -> anyhow::Result<Response> {
     let params = serde_json::to_value(request.params.parameters.clone()).unwrap();
+
+    eprintln!("{}", serde_json::to_string_pretty(&params).unwrap());
 
     let (tx, rx) = oneshot::channel();
     memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(

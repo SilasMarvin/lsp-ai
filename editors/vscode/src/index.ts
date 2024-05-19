@@ -11,14 +11,16 @@ let client: LanguageClient;
 
 export function activate(context: vscode.ExtensionContext) {
   // Configure the server options
-  let serverOptions: ServerOptions = {
+  const serverOptions: ServerOptions = {
     command: "lsp-ai",
     transport: TransportKind.stdio,
   };
 
   // Options to control the language client
-  let clientOptions: LanguageClientOptions = {
-    documentSelector: [{ pattern: "**" }]
+  const config = vscode.workspace.getConfiguration("lsp-ai");
+  const clientOptions: LanguageClientOptions = {
+    documentSelector: [{ pattern: "**" }],
+    initializationOptions: config.serverConfiguration
   };
 
   // Create the language client and start the client
@@ -35,11 +37,15 @@ export function activate(context: vscode.ExtensionContext) {
   // Register generate function
   const generateCommand = 'lsp-ai.generation';
   const generateCommandHandler = (editor: vscode.TextEditor) => {
+    console.log("THE GENERATION CONFIGURATION");
+    console.log(config.generationConfiguration);
     let params = {
       textDocument: {
         uri: editor.document.uri.toString(),
       },
-      position: editor.selection.active
+      position: editor.selection.active,
+      model: config.generationConfiguration.model,
+      parameters: config.generationConfiguration.parameters
     };
     client.sendRequest("textDocument/generation", params).then(result => {
       editor.edit((edit) => {
@@ -51,6 +57,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
   context.subscriptions.push(vscode.commands.registerTextEditorCommand(generateCommand, generateCommandHandler));
 
+  // Register as an inline completion provider
   vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' },
     {
       provideInlineCompletionItems: async (document: vscode.TextDocument, position: vscode.Position) => {
@@ -58,7 +65,9 @@ export function activate(context: vscode.ExtensionContext) {
           textDocument: {
             uri: document.uri.toString(),
           },
-          position: position
+          position: position,
+          model: config.generationConfiguration.model,
+          parameters: config.generationConfiguration.parameters
         };
         const result = await client.sendRequest("textDocument/generation", params);
         return [new vscode.InlineCompletionItem(result["generatedText"])];

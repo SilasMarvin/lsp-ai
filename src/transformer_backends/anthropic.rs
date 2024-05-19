@@ -27,9 +27,11 @@ const fn temperature_default() -> f32 {
     0.1
 }
 
+// NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
 #[derive(Debug, Deserialize)]
 pub struct AnthropicRunParams {
-    chat: Vec<ChatMessage>,
+    system: String,
+    messages: Vec<ChatMessage>,
     #[serde(default = "max_tokens_default")]
     pub max_tokens: usize,
     #[serde(default = "top_p_default")]
@@ -71,7 +73,9 @@ impl Anthropic {
         } else if let Some(token) = &self.configuration.auth_token {
             token.to_string()
         } else {
-            anyhow::bail!("Please set `auth_token_env_var_name` or `auth_token` in `transformer->anthropic` to use an Anthropic");
+            anyhow::bail!(
+                "Please set `auth_token_env_var_name` or `auth_token` to use an Anthropic"
+            );
         };
         let res: AnthropicChatResponse = client
             .post(
@@ -110,12 +114,12 @@ impl Anthropic {
         prompt: &Prompt,
         params: AnthropicRunParams,
     ) -> anyhow::Result<String> {
-        let mut messages = format_chat_messages(&params.chat, prompt);
-        if messages[0].role != "system" {
-            anyhow::bail!(
-                "When using Anthropic, the first message in chat must have role = `system`"
-            )
-        }
+        let mut messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: params.system.clone(),
+        }];
+        messages.extend_from_slice(&params.messages);
+        let mut messages = format_chat_messages(&messages, prompt);
         let system_prompt = messages.remove(0).content;
         self.get_chat(system_prompt, messages, params).await
     }
@@ -170,17 +174,14 @@ mod test {
         let anthropic = Anthropic::new(configuration);
         let prompt = Prompt::default_with_cursor();
         let run_params = json!({
-            "chat": [
-                {
-                    "role": "system",
-                    "content": "You are a coding assistant. You job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
-                },
+            "system": "Test",
+            "messages": [
                 {
                     "role": "user",
-                    "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
+                    "content": "Test {CONTEXT} - {CODE}"
                 }
             ],
-            "max_tokens": 64
+            "max_tokens": 2
         });
         let response = anthropic.do_completion(&prompt, run_params).await?;
         assert!(!response.insert_text.is_empty());
@@ -197,17 +198,14 @@ mod test {
         let anthropic = Anthropic::new(configuration);
         let prompt = Prompt::default_with_cursor();
         let run_params = json!({
-            "chat": [
-                {
-                    "role": "system",
-                    "content": "You are a coding assistant. You job is to generate a code snippet to replace <CURSOR>.\n\nYour instructions are to:\n- Analyze the provided [Context Code] and [Current Code].\n- Generate a concise code snippet that can replace the <cursor> marker in the [Current Code].\n- Do not provide any explanations or modify any code above or below the <CURSOR> position.\n- The generated code should seamlessly fit into the existing code structure and context.\n- Ensure your answer is properly indented and formatted based on the <CURSOR> location.\n- Only respond with code. Do not respond with anything that is not valid code."
-                },
+            "system": "Test",
+            "messages": [
                 {
                     "role": "user",
-                    "content": "[Context code]:\n{CONTEXT}\n\n[Current code]:{CODE}"
+                    "content": "Test {CONTEXT} - {CODE}"
                 }
             ],
-            "max_tokens": 64
+            "max_tokens": 2
         });
         let response = anthropic.do_generate(&prompt, run_params).await?;
         assert!(!response.generated_text.is_empty());
