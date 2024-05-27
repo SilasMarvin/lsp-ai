@@ -32,7 +32,7 @@ pub struct LLaMACPPRunParams {
     chat_template: Option<String>, // A Jinja template
     chat_format: Option<String>,   // The name of a template in llamacpp
     #[serde(default = "max_new_tokens_default")]
-    pub max_new_tokens: usize,
+    pub max_tokens: usize,
     // TODO: Explore other arguments
 }
 
@@ -122,7 +122,36 @@ mod test {
     use serde_json::json;
 
     #[tokio::test]
-    async fn llama_cpp_do_completion() -> anyhow::Result<()> {
+    async fn llama_cpp_do_completion_chat() -> anyhow::Result<()> {
+        let configuration: config::LLaMACPP = serde_json::from_value(json!({
+            "repository": "QuantFactory/Meta-Llama-3-8B-GGUF",
+            "name": "Meta-Llama-3-8B.Q5_K_M.gguf",
+            "n_ctx": 2048,
+            "n_gpu_layers": 1000,
+        }))?;
+        let llama_cpp = LLaMACPP::new(configuration).unwrap();
+        let prompt = Prompt::default_with_cursor();
+        let run_params = json!({
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Test"
+                },
+                {
+                    "role": "user",
+                    "content": "Test {CONTEXT} - {CODE}"
+                }
+            ],
+            "chat_format": "llama2",
+            "max_tokens": 64
+        });
+        let response = llama_cpp.do_completion(&prompt, run_params).await?;
+        assert!(!response.insert_text.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn llama_cpp_do_completion_fim() -> anyhow::Result<()> {
         let configuration: config::LLaMACPP = serde_json::from_value(json!({
             "repository": "stabilityai/stable-code-3b",
             "name": "stable-code-3b-Q5_K_M.gguf",
@@ -145,7 +174,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn llama_cpp_do_generate() -> anyhow::Result<()> {
+    async fn llama_cpp_do_generate_fim() -> anyhow::Result<()> {
         let configuration: config::LLaMACPP = serde_json::from_value(json!({
             "repository": "stabilityai/stable-code-3b",
             "name": "stable-code-3b-Q5_K_M.gguf",

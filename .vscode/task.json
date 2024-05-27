@@ -5,7 +5,7 @@
       "label": "Build Extension",
       "group": "build",
       "type": "npm",
-      "script": "build",
+      "script": "esbuild",
       "path": "editors/vscode/",
       "problemMatcher": {
         "base": "$tsc-watch",

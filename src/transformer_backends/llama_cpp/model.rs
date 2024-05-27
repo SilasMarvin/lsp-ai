@@ -4,7 +4,7 @@ use llama_cpp_2::{
     ggml_time_us,
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
-    model::{params::LlamaModelParams, AddBos, LlamaChatMessage, LlamaModel},
+    model::{params::LlamaModelParams, AddBos, LlamaChatMessage, LlamaModel, Special},
     token::data_array::LlamaTokenDataArray,
 };
 use once_cell::sync::Lazy;
@@ -56,11 +56,11 @@ impl Model {
             .with_context(|| format!("failed to tokenize {}", prompt))?;
 
         let n_cxt = ctx.n_ctx() as usize;
-        let n_kv_req = tokens_list.len() + params.max_new_tokens;
+        let n_kv_req = tokens_list.len() + params.max_tokens;
 
         info!(
             "n_len / max_new_tokens = {}, n_ctx = {n_cxt}, k_kv_req = {n_kv_req}",
-            params.max_new_tokens
+            params.max_tokens
         );
 
         // make sure the KV cache is big enough to hold all the prompt and generated tokens
@@ -89,7 +89,7 @@ impl Model {
         let mut n_cur = n_start;
         let mut n_decode = 0;
         let t_main_start = ggml_time_us();
-        while (n_cur as usize) <= (n_start as usize + params.max_new_tokens) {
+        while (n_cur as usize) <= (n_start as usize + params.max_tokens) {
             // sample the next token
             {
                 let candidates = ctx.candidates_ith(batch.n_tokens() - 1);
@@ -103,7 +103,7 @@ impl Model {
                     break;
                 }
 
-                output.push(self.model.token_to_str(new_token_id)?);
+                output.push(self.model.token_to_str(new_token_id, Special::Tokenize)?);
                 batch.clear();
                 batch.add(new_token_id, n_cur, &[0], true)?;
             }
@@ -143,12 +143,12 @@ impl Model {
     #[instrument(skip(self))]
     pub fn get_eos_token(&self) -> anyhow::Result<String> {
         let token = self.model.token_eos();
-        Ok(self.model.token_to_str(token)?)
+        Ok(self.model.token_to_str(token, Special::Tokenize)?)
     }
 
     #[instrument(skip(self))]
     pub fn get_bos_token(&self) -> anyhow::Result<String> {
         let token = self.model.token_bos();
-        Ok(self.model.token_to_str(token)?)
+        Ok(self.model.token_to_str(token, Special::Tokenize)?)
     }
 }

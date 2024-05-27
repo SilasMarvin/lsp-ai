@@ -19,7 +19,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Options to control the language client
   const config = vscode.workspace.getConfiguration("lsp-ai");
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ pattern: "**" }],
+    documentSelector: [{ scheme: "file" }],
     initializationOptions: config.serverConfiguration
   };
 

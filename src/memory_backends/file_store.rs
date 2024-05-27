@@ -111,36 +111,43 @@ impl FileStore {
         let (mut rope, cursor_index) =
             self.get_rope_for_position(position, params.max_context_length)?;
 
+        // Prioritize doing chat
+        // If FIM is enabled, make sure the cursor is not at the end of the file as that is just completion
+        // If not chat and not FIM do completion
         Ok(match (params.messages.is_some(), params.fim) {
-            r @ (true, _) | r @ (false, Some(_)) if rope.len_chars() != cursor_index => {
+            (true, _) => {
                 let max_length = tokens_to_estimated_characters(params.max_context_length);
                 let start = cursor_index.saturating_sub(max_length / 2);
                 let end = rope
                     .len_chars()
                     .min(cursor_index + (max_length - (cursor_index - start)));
 
-                if r.0 {
-                    rope.insert(cursor_index, "<CURSOR>");
-                    let rope_slice = rope
-                        .get_slice(start..end + "<CURSOR>".chars().count())
-                        .context("Error getting rope slice")?;
-                    rope_slice.to_string()
-                } else {
-                    let fim = r.1.unwrap(); // We can unwrap as we know it is some from the match
-                    rope.insert(end, &fim.end);
-                    rope.insert(cursor_index, &fim.middle);
-                    rope.insert(start, &fim.start);
-                    let rope_slice = rope
-                        .get_slice(
-                            start
-                                ..end
-                                    + fim.start.chars().count()
-                                    + fim.middle.chars().count()
-                                    + fim.end.chars().count(),
-                        )
-                        .context("Error getting rope slice")?;
-                    rope_slice.to_string()
-                }
+                rope.insert(cursor_index, "<CURSOR>");
+                let rope_slice = rope
+                    .get_slice(start..end + "<CURSOR>".chars().count())
+                    .context("Error getting rope slice")?;
+                rope_slice.to_string()
+            }
+            (false, Some(fim)) if rope.len_chars() != cursor_index => {
+                let max_length = tokens_to_estimated_characters(params.max_context_length);
+                let start = cursor_index.saturating_sub(max_length / 2);
+                let end = rope
+                    .len_chars()
+                    .min(cursor_index + (max_length - (cursor_index - start)));
+
+                rope.insert(end, &fim.end);
+                rope.insert(cursor_index, &fim.middle);
+                rope.insert(start, &fim.start);
+                let rope_slice = rope
+                    .get_slice(
+                        start
+                            ..end
+                                + fim.start.chars().count()
+                                + fim.middle.chars().count()
+                                + fim.end.chars().count(),
+                    )
+                    .context("Error getting rope slice")?;
+                rope_slice.to_string()
             }
             _ => {
                 let start = cursor_index
@@ -512,6 +519,82 @@ The end with a trailing new line
             .await?;
         assert_eq!(prompt.context, "");
         assert_eq!(format!("{}\nDocument T", text_document2.text), prompt.code);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_document_cursor_placement_corner_cases() -> anyhow::Result<()> {
+        let text_document = generate_filler_text_document(None, Some("test\n"));
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: text_document.clone(),
+        };
+        let file_store = generate_base_file_store()?;
+        file_store.opened_text_document(params).await?;
+
+        // Test chat
+        let params = json!({
+            "messages": []
+        });
+        let prompt = file_store
+            .build_prompt(
+                &TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: text_document.uri.clone(),
+                    },
+                    position: Position {
+                        line: 1,
+                        character: 0,
+                    },
+                },
+                params,
+            )
+            .await?;
+        assert_eq!(prompt.context, "");
+        let text = r#"test
+<CURSOR>"#
+            .to_string();
+        assert_eq!(text, prompt.code);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fim_placement_corner_cases() -> anyhow::Result<()> {
+        let text_document = generate_filler_text_document(None, Some("test\n"));
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: text_document.clone(),
+        };
+        let file_store = generate_base_file_store()?;
+        file_store.opened_text_document(params).await?;
+
+        // Test FIM
+        let params = json!({
+            "fim": {
+                "start": "SS",
+                "middle": "MM",
+                "end": "EE"
+            }
+        });
+        let prompt = file_store
+            .build_prompt(
+                &TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: text_document.uri.clone(),
+                    },
+                    position: Position {
+                        line: 1,
+                        character: 0,
+                    },
+                },
+                params,
+            )
+            .await?;
+        assert_eq!(prompt.context, "");
+        let text = r#"test
+"#
+        .to_string();
+        assert_eq!(text, prompt.code);
 
         Ok(())
     }

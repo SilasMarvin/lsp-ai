@@ -10,4 +10,3 @@ A short list of a few of the editors it works with:
 - Sublime
 
 It works with many many many more editors.
-
