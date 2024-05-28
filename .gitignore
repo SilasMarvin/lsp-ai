@@ -4,3 +4,4 @@ node_modules
 out
 dist
 lsp-ai.log
+.vsix
