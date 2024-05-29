@@ -1,4 +1,10 @@
-# LSP-AI
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="/logos/logo-white-no-background-1024x1024.png">
+  <source media="(prefers-color-scheme: light)" srcset="/logos/logo-white-black-background-1024x1024.png">
+  <img alt="Logo" src="/logos/logo-white-black-background-1024x1024.png" width="128em">
+</picture>
+
+# (LSP-AI
 
 LSP-AI is an open source language server that serves as a backend for performing completion with large language models and soon other AI powered functionality. Because it is a language server, it works with any editor that has LSP support.
 
