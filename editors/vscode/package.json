@@ -1,7 +1,9 @@
 {
   "name": "lsp-ai",
   "version": "0.1.0",
-  "description": "",
+  "displayName": "LSP-AI",
+  "description": "The official VS Code plugin for LSP-AI.",
+  "icon": "logo-white-black-background-1024x1024.png",
   "repository": "https://github.com/SilasMarvin/lsp-ai",
   "main": "/dist/index.js",
   "scripts": {
