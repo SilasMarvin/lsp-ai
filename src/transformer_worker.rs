@@ -252,6 +252,7 @@ async fn do_completion(
     let (tx, rx) = oneshot::channel();
     memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
         request.params.text_document_position.clone(),
+        transformer_backend.get_prompt_type(&params)?,
         params.clone(),
         tx,
     )))?;
@@ -307,6 +308,7 @@ async fn do_generate(
     let (tx, rx) = oneshot::channel();
     memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
         request.params.text_document_position.clone(),
+        transformer_backend.get_prompt_type(&params)?,
         params.clone(),
         tx,
     )))?;

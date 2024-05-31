@@ -15,7 +15,9 @@ use crate::{
     utils::tokens_to_estimated_characters,
 };
 
-use super::{file_store::FileStore, MemoryBackend, MemoryRunParams, Prompt};
+use super::{
+    file_store::FileStore, ContextAndCodePrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType,
+};
 
 pub struct PostgresML {
     _config: Config,
@@ -129,6 +131,7 @@ impl MemoryBackend for PostgresML {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
+        prompt_type: PromptType,
         params: Value,
     ) -> anyhow::Result<Prompt> {
         let params: MemoryRunParams = serde_json::from_value(params)?;
@@ -164,13 +167,19 @@ impl MemoryBackend for PostgresML {
             .join("\n\n");
         let mut file_store_params = params.clone();
         file_store_params.max_context_length = 512;
-        let code = self.file_store.build_code(position, file_store_params)?;
+        let code = self
+            .file_store
+            .build_code(position, prompt_type, file_store_params)?;
+        let code: ContextAndCodePrompt = code.try_into()?;
+        let code = code.code;
         let max_characters = tokens_to_estimated_characters(params.max_context_length);
-        let context: String = context
+        let _context: String = context
             .chars()
             .take(max_characters - code.chars().count())
             .collect();
-        Ok(Prompt::new(context, code))
+        // We need to redo this section to work with the new memory backend system
+        todo!()
+        // Ok(Prompt::new(context, code))
     }
 
     #[instrument(skip(self))]

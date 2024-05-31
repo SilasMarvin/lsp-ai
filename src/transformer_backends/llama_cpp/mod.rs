@@ -1,9 +1,4 @@
-use anyhow::Context;
-use hf_hub::api::sync::ApiBuilder;
-use serde::Deserialize;
-use serde_json::Value;
-use tracing::instrument;
-
+use super::TransformerBackend;
 use crate::{
     config::{self, ChatMessage, FIM},
     memory_backends::Prompt,
@@ -14,11 +9,14 @@ use crate::{
     },
     utils::format_chat_messages,
 };
+use anyhow::Context;
+use hf_hub::api::sync::ApiBuilder;
+use serde::Deserialize;
+use serde_json::Value;
+use tracing::instrument;
 
 mod model;
 use model::Model;
-
-use super::TransformerBackend;
 
 const fn max_new_tokens_default() -> usize {
     32
@@ -61,20 +59,31 @@ impl LLaMACPP {
         prompt: &Prompt,
         params: &LLaMACPPRunParams,
     ) -> anyhow::Result<String> {
-        Ok(match &params.messages {
-            Some(completion_messages) => {
-                let chat_messages = format_chat_messages(completion_messages, prompt);
-                if let Some(chat_template) = &params.chat_template {
-                    let bos_token = self.model.get_bos_token()?;
-                    let eos_token = self.model.get_eos_token()?;
-                    apply_chat_template(chat_template, chat_messages, &bos_token, &eos_token)?
-                } else {
-                    self.model
-                        .apply_chat_template(chat_messages, params.chat_format.clone())?
+        match prompt {
+            Prompt::ContextAndCode(context_and_code) => Ok(match &params.messages {
+                Some(completion_messages) => {
+                    let chat_messages = format_chat_messages(completion_messages, context_and_code);
+                    if let Some(chat_template) = &params.chat_template {
+                        let bos_token = self.model.get_bos_token()?;
+                        let eos_token = self.model.get_eos_token()?;
+                        apply_chat_template(chat_template, chat_messages, &bos_token, &eos_token)?
+                    } else {
+                        self.model
+                            .apply_chat_template(chat_messages, params.chat_format.clone())?
+                    }
                 }
-            }
-            None => prompt.code.to_owned(),
-        })
+                None => context_and_code.code.clone(),
+            }),
+            Prompt::FIM(fim) => Ok(match &params.fim {
+                Some(fim_params) => {
+                    format!(
+                        "{}{}{}{}{}",
+                        fim_params.start, fim.prompt, fim_params.middle, fim.suffix, fim_params.end
+                    )
+                }
+                None => anyhow::bail!("Prompt type is FIM but no FIM parameters provided"),
+            }),
+        }
     }
 }
 
@@ -143,7 +152,7 @@ mod test {
                 }
             ],
             "chat_format": "llama2",
-            "max_tokens": 64
+            "max_tokens": 4
         });
         let response = llama_cpp.do_completion(&prompt, run_params).await?;
         assert!(!response.insert_text.is_empty());
@@ -166,7 +175,7 @@ mod test {
                 "middle": "<fim_suffix>",
                 "end": "<fim_middle>"
             },
-            "max_tokens": 64
+            "max_tokens": 4
         });
         let response = llama_cpp.do_completion(&prompt, run_params).await?;
         assert!(!response.insert_text.is_empty());
@@ -189,7 +198,7 @@ mod test {
                 "middle": "<fim_suffix>",
                 "end": "<fim_middle>"
             },
-            "max_tokens": 64
+            "max_tokens": 4
         });
         let response = llama_cpp.do_generate(&prompt, run_params).await?;
         assert!(!response.generated_text.is_empty());

@@ -7,11 +7,12 @@ use lsp_types::{
 use serde_json::Value;
 use tracing::error;
 
-use crate::memory_backends::{MemoryBackend, Prompt};
+use crate::memory_backends::{MemoryBackend, Prompt, PromptType};
 
 #[derive(Debug)]
 pub struct PromptRequest {
     position: TextDocumentPositionParams,
+    prompt_type: PromptType,
     params: Value,
     tx: tokio::sync::oneshot::Sender<Prompt>,
 }
@@ -19,11 +20,13 @@ pub struct PromptRequest {
 impl PromptRequest {
     pub fn new(
         position: TextDocumentPositionParams,
+        prompt_type: PromptType,
         params: Value,
         tx: tokio::sync::oneshot::Sender<Prompt>,
     ) -> Self {
         Self {
             position,
+            prompt_type,
             params,
             tx,
         }
@@ -67,7 +70,7 @@ async fn do_task(
         }
         WorkerRequest::Prompt(params) => {
             let prompt = memory_backend
-                .build_prompt(&params.position, params.params)
+                .build_prompt(&params.position, params.prompt_type, params.params)
                 .await?;
             params
                 .tx

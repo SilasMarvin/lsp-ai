@@ -5,7 +5,7 @@ use lsp_types::{
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::config::{ChatMessage, Config, ValidMemoryBackend, FIM};
+use crate::config::{ChatMessage, Config, ValidMemoryBackend};
 
 pub mod file_store;
 mod postgresml;
@@ -14,23 +14,93 @@ const fn max_context_length_default() -> usize {
     1024
 }
 
+#[derive(Clone, Debug)]
+pub enum PromptType {
+    ContextAndCode,
+    FIM,
+}
+
 #[derive(Clone, Deserialize)]
 pub struct MemoryRunParams {
-    pub fim: Option<FIM>,
     pub messages: Option<Vec<ChatMessage>>,
     #[serde(default = "max_context_length_default")]
     pub max_context_length: usize,
 }
 
 #[derive(Debug)]
-pub struct Prompt {
+pub struct ContextAndCodePrompt {
     pub context: String,
     pub code: String,
 }
 
-impl Prompt {
+impl ContextAndCodePrompt {
     pub fn new(context: String, code: String) -> Self {
         Self { context, code }
+    }
+}
+
+#[derive(Debug)]
+pub struct FIMPrompt {
+    pub prompt: String,
+    pub suffix: String,
+}
+
+impl FIMPrompt {
+    pub fn new(prefix: String, suffix: String) -> Self {
+        Self {
+            prompt: prefix,
+            suffix,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Prompt {
+    FIM(FIMPrompt),
+    ContextAndCode(ContextAndCodePrompt),
+}
+
+impl<'a> TryFrom<&'a Prompt> for &'a ContextAndCodePrompt {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &'a Prompt) -> Result<Self, Self::Error> {
+        match value {
+            Prompt::ContextAndCode(code_and_context) => Ok(code_and_context),
+            _ => anyhow::bail!("cannot convert Prompt into CodeAndContextPrompt"),
+        }
+    }
+}
+
+impl TryFrom<Prompt> for ContextAndCodePrompt {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Prompt) -> Result<Self, Self::Error> {
+        match value {
+            Prompt::ContextAndCode(code_and_context) => Ok(code_and_context),
+            _ => anyhow::bail!("cannot convert Prompt into CodeAndContextPrompt"),
+        }
+    }
+}
+
+impl TryFrom<Prompt> for FIMPrompt {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Prompt) -> Result<Self, Self::Error> {
+        match value {
+            Prompt::FIM(fim) => Ok(fim),
+            _ => anyhow::bail!("cannot convert Prompt into FIMPrompt"),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a Prompt> for &'a FIMPrompt {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &'a Prompt) -> Result<Self, Self::Error> {
+        match value {
+            Prompt::FIM(fim) => Ok(fim),
+            _ => anyhow::bail!("cannot convert Prompt into FIMPrompt"),
+        }
     }
 }
 
@@ -48,6 +118,7 @@ pub trait MemoryBackend {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
+        prompt_type: PromptType,
         params: Value,
     ) -> anyhow::Result<Prompt>;
     async fn get_filter_text(
@@ -76,16 +147,23 @@ impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
 #[cfg(test)]
 impl Prompt {
     pub fn default_with_cursor() -> Self {
-        Self {
-            context: r#"def test_context():\n    pass"#.to_string(),
-            code: r#"def test_code():\n    <CURSOR>"#.to_string(),
-        }
+        Self::ContextAndCode(ContextAndCodePrompt::new(
+            r#"def test_context():\n    pass"#.to_string(),
+            r#"def test_code():\n    <CURSOR>"#.to_string(),
+        ))
+    }
+
+    pub fn default_fim() -> Self {
+        Self::FIM(FIMPrompt::new(
+            r#"def test_context():\n    pass"#.to_string(),
+            r#"def test_code():\n    "#.to_string(),
+        ))
     }
 
     pub fn default_without_cursor() -> Self {
-        Self {
-            context: r#"def test_context():\n    pass"#.to_string(),
-            code: r#"def test_code():\n    "#.to_string(),
-        }
+        Self::ContextAndCode(ContextAndCodePrompt::new(
+            r#"def test_context():\n    pass"#.to_string(),
+            r#"def test_code():\n    "#.to_string(),
+        ))
     }
 }

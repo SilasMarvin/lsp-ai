@@ -7,8 +7,7 @@ use crate::{
     config::{self, ChatMessage, FIM},
     memory_backends::Prompt,
     transformer_worker::{
-        DoCompletionResponse, DoGenerationResponse, DoGenerationStreamResponse,
-        GenerationStreamRequest,
+        DoGenerationResponse, DoGenerationStreamResponse, GenerationStreamRequest,
     },
     utils::{format_chat_messages, format_context_code},
 };
@@ -68,14 +67,14 @@ struct OpenAICompletionsResponse {
 }
 
 #[derive(Deserialize)]
-struct OpenAIChatChoices {
-    message: ChatMessage,
+pub struct OpenAIChatChoices {
+    pub message: ChatMessage,
 }
 
 #[derive(Deserialize)]
-struct OpenAIChatResponse {
-    choices: Option<Vec<OpenAIChatChoices>>,
-    error: Option<Value>,
+pub struct OpenAIChatResponse {
+    pub choices: Option<Vec<OpenAIChatChoices>>,
+    pub error: Option<Value>,
 }
 
 impl OpenAI {
@@ -180,32 +179,43 @@ impl OpenAI {
         prompt: &Prompt,
         params: OpenAIRunParams,
     ) -> anyhow::Result<String> {
-        match &params.messages {
-            Some(completion_messages) => {
-                let messages = format_chat_messages(completion_messages, prompt);
-                self.get_chat(messages, params).await
-            }
-            None => {
-                self.get_completion(&format_context_code(&prompt.context, &prompt.code), params)
+        match prompt {
+            Prompt::ContextAndCode(code_and_context) => match &params.messages {
+                Some(completion_messages) => {
+                    let messages = format_chat_messages(completion_messages, code_and_context);
+                    self.get_chat(messages, params).await
+                }
+                None => {
+                    self.get_completion(
+                        &format_context_code(&code_and_context.context, &code_and_context.code),
+                        params,
+                    )
                     .await
-            }
+                }
+            },
+            Prompt::FIM(fim) => match &params.fim {
+                Some(fim_params) => {
+                    self.get_completion(
+                        &format!(
+                            "{}{}{}{}{}",
+                            fim_params.start,
+                            fim.prompt,
+                            fim_params.middle,
+                            fim.suffix,
+                            fim_params.end
+                        ),
+                        params,
+                    )
+                    .await
+                }
+                None => anyhow::bail!("Prompt type is FIM but no FIM parameters provided"),
+            },
         }
     }
 }
 
 #[async_trait::async_trait]
 impl TransformerBackend for OpenAI {
-    #[instrument(skip(self))]
-    async fn do_completion(
-        &self,
-        prompt: &Prompt,
-        params: Value,
-    ) -> anyhow::Result<DoCompletionResponse> {
-        let params: OpenAIRunParams = serde_json::from_value(params)?;
-        let insert_text = self.do_chat_completion(prompt, params).await?;
-        Ok(DoCompletionResponse { insert_text })
-    }
-
     #[instrument(skip(self))]
     async fn do_generate(
         &self,
@@ -234,74 +244,30 @@ mod test {
     use serde_json::{from_value, json};
 
     #[tokio::test]
-    async fn openai_completion_do_completion() -> anyhow::Result<()> {
+    async fn open_ai_completion_do_generate() -> anyhow::Result<()> {
         let configuration: config::OpenAI = from_value(json!({
             "completions_endpoint": "https://api.openai.com/v1/completions",
             "model": "gpt-3.5-turbo-instruct",
             "auth_token_env_var_name": "OPENAI_API_KEY",
         }))?;
-        let openai = OpenAI::new(configuration);
+        let open_ai = OpenAI::new(configuration);
         let prompt = Prompt::default_without_cursor();
         let run_params = json!({
             "max_tokens": 64
         });
-        let response = openai.do_completion(&prompt, run_params).await?;
-        assert!(!response.insert_text.is_empty());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn openai_chat_do_completion() -> anyhow::Result<()> {
-        let configuration: config::OpenAI = serde_json::from_value(json!({
-            "chat_endpoint": "https://api.openai.com/v1/chat/completions",
-            "model": "gpt-3.5-turbo",
-            "auth_token_env_var_name": "OPENAI_API_KEY",
-        }))?;
-        let openai = OpenAI::new(configuration);
-        let prompt = Prompt::default_with_cursor();
-        let run_params = json!({
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "Test"
-                },
-                {
-                    "role": "user",
-                    "content": "Test {CONTEXT} - {CODE}"
-                }
-            ],
-            "max_tokens": 64
-        });
-        let response = openai.do_completion(&prompt, run_params).await?;
-        assert!(!response.insert_text.is_empty());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn openai_completion_do_generate() -> anyhow::Result<()> {
-        let configuration: config::OpenAI = from_value(json!({
-            "completions_endpoint": "https://api.openai.com/v1/completions",
-            "model": "gpt-3.5-turbo-instruct",
-            "auth_token_env_var_name": "OPENAI_API_KEY",
-        }))?;
-        let openai = OpenAI::new(configuration);
-        let prompt = Prompt::default_without_cursor();
-        let run_params = json!({
-            "max_tokens": 64
-        });
-        let response = openai.do_generate(&prompt, run_params).await?;
+        let response = open_ai.do_generate(&prompt, run_params).await?;
         assert!(!response.generated_text.is_empty());
         Ok(())
     }
 
     #[tokio::test]
-    async fn openai_chat_do_generate() -> anyhow::Result<()> {
+    async fn open_ai_chat_do_generate() -> anyhow::Result<()> {
         let configuration: config::OpenAI = serde_json::from_value(json!({
             "chat_endpoint": "https://api.openai.com/v1/chat/completions",
             "model": "gpt-3.5-turbo",
             "auth_token_env_var_name": "OPENAI_API_KEY",
         }))?;
-        let openai = OpenAI::new(configuration);
+        let open_ai = OpenAI::new(configuration);
         let prompt = Prompt::default_with_cursor();
         let run_params = json!({
             "messages": [
@@ -316,7 +282,7 @@ mod test {
             ],
             "max_tokens": 64
         });
-        let response = openai.do_generate(&prompt, run_params).await?;
+        let response = open_ai.do_generate(&prompt, run_params).await?;
         assert!(!response.generated_text.is_empty());
         Ok(())
     }

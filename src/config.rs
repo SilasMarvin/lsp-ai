@@ -16,13 +16,15 @@ pub enum ValidMemoryBackend {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum ValidModel {
-    #[cfg(feature = "llamacpp")]
-    #[serde(rename = "llamacpp")]
+    #[cfg(feature = "llama_cpp")]
+    #[serde(rename = "llama_cpp")]
     LLaMACPP(LLaMACPP),
-    #[serde(rename = "openai")]
+    #[serde(rename = "open_ai")]
     OpenAI(OpenAI),
     #[serde(rename = "anthropic")]
     Anthropic(Anthropic),
+    #[serde(rename = "mistral_fim")]
+    MistralFIM(MistralFIM),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -30,6 +32,17 @@ pub enum ValidModel {
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    pub tool_calls: Option<Value>, // This is to be compatible with Mistral
+}
+
+impl ChatMessage {
+    pub fn new(role: String, content: String) -> Self {
+        Self {
+            role,
+            content,
+            tool_calls: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -78,6 +91,20 @@ const fn n_gpu_layers_default() -> u32 {
 
 const fn n_ctx_default() -> u32 {
     1000
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MistralFIM {
+    // The auth token env var name
+    pub auth_token_env_var_name: Option<String>,
+    pub auth_token: Option<String>,
+    // The fim endpoint
+    pub fim_endpoint: Option<String>,
+    // The model name
+    pub model: String,
+    #[serde(default = "api_max_requests_per_second_default")]
+    pub max_requests_per_second: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -205,10 +232,11 @@ impl Config {
                     &self.config.completion.as_ref().unwrap().model
                 )
             })? {
-            #[cfg(feature = "llamacpp")]
+            #[cfg(feature = "llama_cpp")]
             ValidModel::LLaMACPP(_) => Ok(1.),
-            ValidModel::OpenAI(openai) => Ok(openai.max_requests_per_second),
+            ValidModel::OpenAI(open_ai) => Ok(open_ai.max_requests_per_second),
             ValidModel::Anthropic(anthropic) => Ok(anthropic.max_requests_per_second),
+            ValidModel::MistralFIM(mistral_fim) => Ok(mistral_fim.max_requests_per_second),
         }
     }
 }
@@ -237,7 +265,7 @@ mod test {
     use serde_json::json;
 
     #[test]
-    #[cfg(feature = "llamacpp")]
+    #[cfg(feature = "llama_cpp")]
     fn llama_cpp_config() {
         let args = json!({
             "initializationOptions": {
@@ -246,7 +274,7 @@ mod test {
                 },
                 "models": {
                     "model1": {
-                        "type": "llamacpp",
+                        "type": "llama_cpp",
                         "repository": "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
                         "name": "deepseek-coder-6.7b-instruct.Q5_K_S.gguf",
                         "n_ctx": 2048,
@@ -271,7 +299,7 @@ mod test {
     }
 
     #[test]
-    fn openai_config() {
+    fn open_ai_config() {
         let args = json!({
             "initializationOptions": {
                 "memory": {
@@ -279,7 +307,7 @@ mod test {
                 },
                 "models": {
                     "model1": {
-                        "type": "openai",
+                        "type": "open_ai",
                         "completions_endpoint": "https://api.fireworks.ai/inference/v1/completions",
                         "model": "accounts/fireworks/models/llama-v2-34b-code",
                         "auth_token_env_var_name": "FIREWORKS_API_KEY",

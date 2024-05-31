@@ -1,6 +1,6 @@
 use lsp_server::ResponseError;
 
-use crate::{config::ChatMessage, memory_backends::Prompt};
+use crate::{config::ChatMessage, memory_backends::ContextAndCodePrompt};
 
 pub trait ToResponseError {
     fn to_response_error(&self, code: i32) -> ResponseError;
@@ -20,15 +20,19 @@ pub fn tokens_to_estimated_characters(tokens: usize) -> usize {
     tokens * 4
 }
 
-pub fn format_chat_messages(messages: &[ChatMessage], prompt: &Prompt) -> Vec<ChatMessage> {
+pub fn format_chat_messages(
+    messages: &[ChatMessage],
+    prompt: &ContextAndCodePrompt,
+) -> Vec<ChatMessage> {
     messages
         .iter()
-        .map(|m| ChatMessage {
-            role: m.role.to_owned(),
-            content: m
-                .content
-                .replace("{CONTEXT}", &prompt.context)
-                .replace("{CODE}", &prompt.code),
+        .map(|m| {
+            ChatMessage::new(
+                m.role.to_owned(),
+                m.content
+                    .replace("{CONTEXT}", &prompt.context)
+                    .replace("{CODE}", &prompt.code),
+            )
         })
         .collect()
 }

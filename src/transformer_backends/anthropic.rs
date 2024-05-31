@@ -7,8 +7,7 @@ use crate::{
     config::{self, ChatMessage},
     memory_backends::Prompt,
     transformer_worker::{
-        DoCompletionResponse, DoGenerationResponse, DoGenerationStreamResponse,
-        GenerationStreamRequest,
+        DoGenerationResponse, DoGenerationStreamResponse, GenerationStreamRequest,
     },
     utils::format_chat_messages,
 };
@@ -41,7 +40,7 @@ pub struct AnthropicRunParams {
 }
 
 pub struct Anthropic {
-    configuration: config::Anthropic,
+    config: config::Anthropic,
 }
 
 #[derive(Deserialize)]
@@ -56,9 +55,8 @@ struct AnthropicChatResponse {
 }
 
 impl Anthropic {
-    #[instrument]
-    pub fn new(configuration: config::Anthropic) -> Self {
-        Self { configuration }
+    pub fn new(config: config::Anthropic) -> Self {
+        Self { config }
     }
 
     async fn get_chat(
@@ -68,9 +66,9 @@ impl Anthropic {
         params: AnthropicRunParams,
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
-        let token = if let Some(env_var_name) = &self.configuration.auth_token_env_var_name {
+        let token = if let Some(env_var_name) = &self.config.auth_token_env_var_name {
             std::env::var(env_var_name)?
-        } else if let Some(token) = &self.configuration.auth_token {
+        } else if let Some(token) = &self.config.auth_token {
             token.to_string()
         } else {
             anyhow::bail!(
@@ -79,7 +77,7 @@ impl Anthropic {
         };
         let res: AnthropicChatResponse = client
             .post(
-                self.configuration
+                self.config
                     .chat_endpoint
                     .as_ref()
                     .context("must specify `completions_endpoint` to use completions")?,
@@ -89,7 +87,7 @@ impl Anthropic {
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .json(&json!({
-                "model": self.configuration.model,
+                "model": self.config.model,
                 "system": system_prompt,
                 "max_tokens": params.max_tokens,
                 "top_p": params.top_p,
@@ -114,12 +112,12 @@ impl Anthropic {
         prompt: &Prompt,
         params: AnthropicRunParams,
     ) -> anyhow::Result<String> {
-        let mut messages = vec![ChatMessage {
-            role: "system".to_string(),
-            content: params.system.clone(),
-        }];
+        let mut messages = vec![ChatMessage::new(
+            "system".to_string(),
+            params.system.clone(),
+        )];
         messages.extend_from_slice(&params.messages);
-        let mut messages = format_chat_messages(&messages, prompt);
+        let mut messages = format_chat_messages(&messages, prompt.try_into()?);
         let system_prompt = messages.remove(0).content;
         self.get_chat(system_prompt, messages, params).await
     }
@@ -127,17 +125,6 @@ impl Anthropic {
 
 #[async_trait::async_trait]
 impl TransformerBackend for Anthropic {
-    #[instrument(skip(self))]
-    async fn do_completion(
-        &self,
-        prompt: &Prompt,
-        params: Value,
-    ) -> anyhow::Result<DoCompletionResponse> {
-        let params: AnthropicRunParams = serde_json::from_value(params)?;
-        let insert_text = self.do_get_chat(prompt, params).await?;
-        Ok(DoCompletionResponse { insert_text })
-    }
-
     #[instrument(skip(self))]
     async fn do_generate(
         &self,
@@ -163,30 +150,6 @@ impl TransformerBackend for Anthropic {
 mod test {
     use super::*;
     use serde_json::{from_value, json};
-
-    #[tokio::test]
-    async fn anthropic_chat_do_completion() -> anyhow::Result<()> {
-        let configuration: config::Anthropic = from_value(json!({
-            "chat_endpoint": "https://api.anthropic.com/v1/messages",
-            "model": "claude-3-haiku-20240307",
-            "auth_token_env_var_name": "ANTHROPIC_API_KEY",
-        }))?;
-        let anthropic = Anthropic::new(configuration);
-        let prompt = Prompt::default_with_cursor();
-        let run_params = json!({
-            "system": "Test",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Test {CONTEXT} - {CODE}"
-                }
-            ],
-            "max_tokens": 2
-        });
-        let response = anthropic.do_completion(&prompt, run_params).await?;
-        assert!(!response.insert_text.is_empty());
-        Ok(())
-    }
 
     #[tokio::test]
     async fn anthropic_chat_do_generate() -> anyhow::Result<()> {

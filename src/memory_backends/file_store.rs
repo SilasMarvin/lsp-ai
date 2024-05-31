@@ -12,7 +12,7 @@ use crate::{
     utils::tokens_to_estimated_characters,
 };
 
-use super::{MemoryBackend, MemoryRunParams, Prompt};
+use super::{ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType};
 
 pub struct FileStore {
     _crawl: bool,
@@ -106,56 +106,54 @@ impl FileStore {
     pub fn build_code(
         &self,
         position: &TextDocumentPositionParams,
+        prompt_type: PromptType,
         params: MemoryRunParams,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<Prompt> {
         let (mut rope, cursor_index) =
             self.get_rope_for_position(position, params.max_context_length)?;
 
-        // Prioritize doing chat
-        // If FIM is enabled, make sure the cursor is not at the end of the file as that is just completion
-        // If not chat and not FIM do completion
-        Ok(match (params.messages.is_some(), params.fim) {
-            (true, _) => {
+        Ok(match prompt_type {
+            PromptType::ContextAndCode => {
+                if params.messages.is_some() {
+                    let max_length = tokens_to_estimated_characters(params.max_context_length);
+                    let start = cursor_index.saturating_sub(max_length / 2);
+                    let end = rope
+                        .len_chars()
+                        .min(cursor_index + (max_length - (cursor_index - start)));
+
+                    rope.insert(cursor_index, "<CURSOR>");
+                    let rope_slice = rope
+                        .get_slice(start..end + "<CURSOR>".chars().count())
+                        .context("Error getting rope slice")?;
+                    Prompt::ContextAndCode(ContextAndCodePrompt::new(
+                        "".to_string(),
+                        rope_slice.to_string(),
+                    ))
+                } else {
+                    let start = cursor_index
+                        .saturating_sub(tokens_to_estimated_characters(params.max_context_length));
+                    let rope_slice = rope
+                        .get_slice(start..cursor_index)
+                        .context("Error getting rope slice")?;
+                    Prompt::ContextAndCode(ContextAndCodePrompt::new(
+                        "".to_string(),
+                        rope_slice.to_string(),
+                    ))
+                }
+            }
+            PromptType::FIM => {
                 let max_length = tokens_to_estimated_characters(params.max_context_length);
                 let start = cursor_index.saturating_sub(max_length / 2);
                 let end = rope
                     .len_chars()
                     .min(cursor_index + (max_length - (cursor_index - start)));
-
-                rope.insert(cursor_index, "<CURSOR>");
-                let rope_slice = rope
-                    .get_slice(start..end + "<CURSOR>".chars().count())
-                    .context("Error getting rope slice")?;
-                rope_slice.to_string()
-            }
-            (false, Some(fim)) if rope.len_chars() != cursor_index => {
-                let max_length = tokens_to_estimated_characters(params.max_context_length);
-                let start = cursor_index.saturating_sub(max_length / 2);
-                let end = rope
-                    .len_chars()
-                    .min(cursor_index + (max_length - (cursor_index - start)));
-
-                rope.insert(end, &fim.end);
-                rope.insert(cursor_index, &fim.middle);
-                rope.insert(start, &fim.start);
-                let rope_slice = rope
-                    .get_slice(
-                        start
-                            ..end
-                                + fim.start.chars().count()
-                                + fim.middle.chars().count()
-                                + fim.end.chars().count(),
-                    )
-                    .context("Error getting rope slice")?;
-                rope_slice.to_string()
-            }
-            _ => {
-                let start = cursor_index
-                    .saturating_sub(tokens_to_estimated_characters(params.max_context_length));
-                let rope_slice = rope
+                let prefix = rope
                     .get_slice(start..cursor_index)
                     .context("Error getting rope slice")?;
-                rope_slice.to_string()
+                let suffix = rope
+                    .get_slice(cursor_index..end)
+                    .context("Error getting rope slice")?;
+                Prompt::FIM(FIMPrompt::new(prefix.to_string(), suffix.to_string()))
             }
         })
     }
@@ -186,11 +184,11 @@ impl MemoryBackend for FileStore {
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
+        prompt_type: PromptType,
         params: Value,
     ) -> anyhow::Result<Prompt> {
         let params: MemoryRunParams = serde_json::from_value(params)?;
-        let code = self.build_code(position, params)?;
-        Ok(Prompt::new("".to_string(), code))
+        self.build_code(position, prompt_type, params)
     }
 
     #[instrument(skip(self))]
@@ -404,7 +402,6 @@ The end with a trailing new line
         let file_store = generate_base_file_store()?;
         file_store.opened_text_document(params).await?;
 
-        let params = json!({});
         let prompt = file_store
             .build_prompt(
                 &TextDocumentPositionParams {
@@ -416,20 +413,15 @@ The end with a trailing new line
                         character: 10,
                     },
                 },
-                params,
+                PromptType::ContextAndCode,
+                json!({}),
             )
             .await?;
+        let prompt: ContextAndCodePrompt = prompt.try_into()?;
         assert_eq!(prompt.context, "");
         assert_eq!("Document T", prompt.code);
 
         // Test FIM
-        let params = json!({
-            "fim": {
-                "start": "SS",
-                "middle": "MM",
-                "end": "EE"
-            }
-        });
         let prompt = file_store
             .build_prompt(
                 &TextDocumentPositionParams {
@@ -441,24 +433,24 @@ The end with a trailing new line
                         character: 10,
                     },
                 },
-                params,
+                PromptType::FIM,
+                json!({}),
             )
             .await?;
-        assert_eq!(prompt.context, "");
-        let text = r#"SSDocument TMMop
+        let prompt: FIMPrompt = prompt.try_into()?;
+        assert_eq!(prompt.prompt, r#"Document T"#);
+        assert_eq!(
+            prompt.suffix,
+            r#"op
 Here is a more complicated document
 
 Some text
 
 The end with a trailing new line
-EE"#
-        .to_string();
-        assert_eq!(text, prompt.code);
+"#
+        );
 
         // Test chat
-        let params = json!({
-            "messages": []
-        });
         let prompt = file_store
             .build_prompt(
                 &TextDocumentPositionParams {
@@ -470,9 +462,13 @@ EE"#
                         character: 10,
                     },
                 },
-                params,
+                PromptType::ContextAndCode,
+                json!({
+                    "messages": []
+                }),
             )
             .await?;
+        let prompt: ContextAndCodePrompt = prompt.try_into()?;
         assert_eq!(prompt.context, "");
         let text = r#"Document T<CURSOR>op
 Here is a more complicated document
@@ -502,7 +498,6 @@ The end with a trailing new line
         };
         file_store.opened_text_document(params).await?;
 
-        let params = json!({});
         let prompt = file_store
             .build_prompt(
                 &TextDocumentPositionParams {
@@ -514,9 +509,11 @@ The end with a trailing new line
                         character: 10,
                     },
                 },
-                params,
+                PromptType::ContextAndCode,
+                json!({}),
             )
             .await?;
+        let prompt: ContextAndCodePrompt = prompt.try_into()?;
         assert_eq!(prompt.context, "");
         assert_eq!(format!("{}\nDocument T", text_document2.text), prompt.code);
 
@@ -533,9 +530,6 @@ The end with a trailing new line
         file_store.opened_text_document(params).await?;
 
         // Test chat
-        let params = json!({
-            "messages": []
-        });
         let prompt = file_store
             .build_prompt(
                 &TextDocumentPositionParams {
@@ -547,9 +541,11 @@ The end with a trailing new line
                         character: 0,
                     },
                 },
-                params,
+                PromptType::ContextAndCode,
+                json!({"messages": []}),
             )
             .await?;
+        let prompt: ContextAndCodePrompt = prompt.try_into()?;
         assert_eq!(prompt.context, "");
         let text = r#"test
 <CURSOR>"#
@@ -559,43 +555,43 @@ The end with a trailing new line
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_fim_placement_corner_cases() -> anyhow::Result<()> {
-        let text_document = generate_filler_text_document(None, Some("test\n"));
-        let params = lsp_types::DidOpenTextDocumentParams {
-            text_document: text_document.clone(),
-        };
-        let file_store = generate_base_file_store()?;
-        file_store.opened_text_document(params).await?;
+    //     #[tokio::test]
+    //     async fn test_fim_placement_corner_cases() -> anyhow::Result<()> {
+    //         let text_document = generate_filler_text_document(None, Some("test\n"));
+    //         let params = lsp_types::DidOpenTextDocumentParams {
+    //             text_document: text_document.clone(),
+    //         };
+    //         let file_store = generate_base_file_store()?;
+    //         file_store.opened_text_document(params).await?;
 
-        // Test FIM
-        let params = json!({
-            "fim": {
-                "start": "SS",
-                "middle": "MM",
-                "end": "EE"
-            }
-        });
-        let prompt = file_store
-            .build_prompt(
-                &TextDocumentPositionParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: text_document.uri.clone(),
-                    },
-                    position: Position {
-                        line: 1,
-                        character: 0,
-                    },
-                },
-                params,
-            )
-            .await?;
-        assert_eq!(prompt.context, "");
-        let text = r#"test
-"#
-        .to_string();
-        assert_eq!(text, prompt.code);
+    //         // Test FIM
+    //         let params = json!({
+    //             "fim": {
+    //                 "start": "SS",
+    //                 "middle": "MM",
+    //                 "end": "EE"
+    //             }
+    //         });
+    //         let prompt = file_store
+    //             .build_prompt(
+    //                 &TextDocumentPositionParams {
+    //                     text_document: TextDocumentIdentifier {
+    //                         uri: text_document.uri.clone(),
+    //                     },
+    //                     position: Position {
+    //                         line: 1,
+    //                         character: 0,
+    //                     },
+    //                 },
+    //                 params,
+    //             )
+    //             .await?;
+    //         assert_eq!(prompt.context, "");
+    //         let text = r#"test
+    // "#
+    //         .to_string();
+    //         assert_eq!(text, prompt.code);
 
-        Ok(())
-    }
+    //         Ok(())
+    //     }
 }
