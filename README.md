@@ -18,6 +18,7 @@ A short list of a few of the editors it works with:
 It works with many many many more editors.
 
 See the wiki for instructions on:
+- [Getting Started](https://github.com/SilasMarvin/lsp-ai/wiki)
 - [Installation](https://github.com/SilasMarvin/lsp-ai/wiki/Installation)
 - [Configuration](https://github.com/SilasMarvin/lsp-ai/wiki/Configuration)
 - [Plugins](https://github.com/SilasMarvin/lsp-ai/wiki/Plugins)
@@ -45,13 +46,15 @@ LSP-AI aims to fill this gap by providing a language server that integrates AI-p
     - LSP-AI supports any editor that adheres to the Language Server Protocol (LSP), ensuring that a wide range of editors can leverage the AI capabilities provided by LSP-AI.
 
 5. **Flexible LLM Backend Support**:
-    - Currently, LSP-AI supports llama.cpp, OpenAI-compatible APIs, and Anthropic-compatible APIs, giving developers the flexibility to choose their preferred backend. This list will soon grow.
+    - Currently, LSP-AI supports llama.cpp, OpenAI-compatible APIs, Anthropic-compatible APIs and Mistral AI FIM-compatible APIs, giving developers the flexibility to choose their preferred backend. This list will soon grow.
 
 6. **Future-Ready**:
     - LSP-AI is committed to staying updated with the latest advancements in LLM-driven software development.
 
 # Roadmap
 
-- Implement semantic search-powered context building
+There is so much to do for this project and incredible new research and tools coming out everyday. Below is a list of some ideas for what we want to add next, but we welcome any contributions and discussion around prioritizing new features.
+
+- Implement semantic search-powered context building (This could be incredibly cool and powerful)
 - Support for additional backends like [llamafile](https://github.com/Mozilla-Ocho/llamafile)
 - Exploration of agent-based systems

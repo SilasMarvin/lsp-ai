@@ -17,7 +17,7 @@ const defaultServerConfiguration =
   },
   "models": {
     "model1": {
-      "type": "openai",
+      "type": "open_ai",
       "chat_endpoint": "https://api.openai.com/v1/chat/completions",
       "model": "gpt-4o",
       "auth_token_env_var_name": "OPENAI_API_KEY"
