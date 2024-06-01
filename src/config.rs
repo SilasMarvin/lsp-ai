@@ -5,6 +5,10 @@ use std::collections::HashMap;
 
 pub type Kwargs = HashMap<String, Value>;
 
+const fn max_requests_per_second_default() -> f32 {
+    1.
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub enum ValidMemoryBackend {
     #[serde(rename = "file_store")]
@@ -103,7 +107,7 @@ pub struct MistralFIM {
     pub fim_endpoint: Option<String>,
     // The model name
     pub model: String,
-    #[serde(default = "api_max_requests_per_second_default")]
+    #[serde(default = "max_requests_per_second_default")]
     pub max_requests_per_second: f32,
 }
 
@@ -117,10 +121,8 @@ pub struct LLaMACPP {
     pub n_gpu_layers: u32,
     #[serde(default = "n_ctx_default")]
     pub n_ctx: u32,
-}
-
-const fn api_max_requests_per_second_default() -> f32 {
-    0.5
+    #[serde(default = "max_requests_per_second_default")]
+    pub max_requests_per_second: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -134,7 +136,7 @@ pub struct OpenAI {
     // The chat endpoint
     pub chat_endpoint: Option<String>,
     // The maximum requests per second
-    #[serde(default = "api_max_requests_per_second_default")]
+    #[serde(default = "max_requests_per_second_default")]
     pub max_requests_per_second: f32,
     // The model name
     pub model: String,
@@ -151,7 +153,7 @@ pub struct Anthropic {
     // The chat endpoint
     pub chat_endpoint: Option<String>,
     // The maximum requests per second
-    #[serde(default = "api_max_requests_per_second_default")]
+    #[serde(default = "max_requests_per_second_default")]
     pub max_requests_per_second: f32,
     // The model name
     pub model: String,
@@ -233,7 +235,7 @@ impl Config {
                 )
             })? {
             #[cfg(feature = "llama_cpp")]
-            ValidModel::LLaMACPP(_) => Ok(1.),
+            ValidModel::LLaMACPP(llama_cpp) => Ok(llama_cpp.max_requests_per_second),
             ValidModel::OpenAI(open_ai) => Ok(open_ai.max_requests_per_second),
             ValidModel::Anthropic(anthropic) => Ok(anthropic.max_requests_per_second),
             ValidModel::MistralFIM(mistral_fim) => Ok(mistral_fim.max_requests_per_second),

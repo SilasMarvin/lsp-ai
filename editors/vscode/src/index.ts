@@ -139,6 +139,9 @@ export function activate(context: vscode.ExtensionContext) {
     generationConfiguration = defaultGenerationConfiguration;
   }
 
+  // Set the inlineCompletionConfiguration
+  const inlineCompletionConfiguration = vscode.workspace.getConfiguration("lsp-ai").inlineCompletionConfiguration;
+
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file" }],
     initializationOptions: serverConfiguration
@@ -177,6 +180,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerTextEditorCommand(generateCommand, generateCommandHandler));
 
   // Register as an inline completion provider
+  let lastInlineCompletion = Date.now();
+  let inlineCompletionRequestCounter = 0;
   vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' },
     {
       provideInlineCompletionItems: async (document: vscode.TextDocument, position: vscode.Position) => {
@@ -188,8 +193,24 @@ export function activate(context: vscode.ExtensionContext) {
           model: generationConfiguration.model,
           parameters: generationConfiguration.parameters
         };
-        const result = await client.sendRequest("textDocument/generation", params);
-        return [new vscode.InlineCompletionItem(result["generatedText"])];
+
+        inlineCompletionRequestCounter += 1;
+        let localInlineCompletionRequestCounter = inlineCompletionRequestCounter;
+
+        if ((Date.now() - lastInlineCompletion) / 1000 < 1 / inlineCompletionConfiguration["maxCompletionsPerSecond"]) {
+          await new Promise(r => setTimeout(r, ((1 / inlineCompletionConfiguration["maxCompletionsPerSecond"]) - ((Date.now() - lastInlineCompletion) / 1000 )) * 1000));
+          if (inlineCompletionRequestCounter == localInlineCompletionRequestCounter) {
+            lastInlineCompletion = Date.now();
+            const result = await client.sendRequest("textDocument/generation", params);
+            return [new vscode.InlineCompletionItem(result["generatedText"])];
+          } else {
+            return [];
+          }
+        } else {
+          lastInlineCompletion = Date.now();
+          const result = await client.sendRequest("textDocument/generation", params);
+          return [new vscode.InlineCompletionItem(result["generatedText"])];
+        }
       }
     }
   );
