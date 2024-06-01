@@ -124,7 +124,6 @@ fn do_run(
     let mut last_completion_request = None;
 
     let run_dispatch_request = |request| {
-        eprintln!("DISPATCHING REQUEST");
         let task_connection = connection.clone();
         let task_transformer_backends = transformer_backends.clone();
         let task_memory_backend_tx = memory_backend_tx.clone();
