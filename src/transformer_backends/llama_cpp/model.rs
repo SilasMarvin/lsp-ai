@@ -41,9 +41,7 @@ impl Model {
     #[instrument(skip(self))]
     pub fn complete(&self, prompt: &str, params: LLaMACPPRunParams) -> anyhow::Result<String> {
         // initialize the context
-        let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(Some(self.n_ctx))
-            .with_n_batch(self.n_ctx.get());
+        let ctx_params = LlamaContextParams::default().with_n_ctx(Some(self.n_ctx));
 
         let mut ctx = self
             .model
