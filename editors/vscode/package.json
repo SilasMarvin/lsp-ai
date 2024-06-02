@@ -40,6 +40,13 @@
           "type": "object",
           "default": {},
           "description": "JSON configuration for LSP-AI generation"
+        },
+        "lsp-ai.inlineCompletionConfiguration": {
+          "type": "object",
+          "default": {
+            "maxCompletionsPerSecond": 1
+          },
+          "description": "JSON configuration for LSP-AI generation"
         }
       }
     }
