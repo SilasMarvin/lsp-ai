@@ -180,6 +180,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerTextEditorCommand(generateCommand, generateCommandHandler));
 
   // Register as an inline completion provider
+  // We want to sort of debounce queries
   let lastInlineCompletion = Date.now();
   let inlineCompletionRequestCounter = 0;
   vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' },
