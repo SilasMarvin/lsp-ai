@@ -4,7 +4,7 @@
   <img alt="Logo" src="/logos/logo-white-black-background-1024x1024.png" width="128em">
 </picture>
 
-# (LSP-AI
+# LSP-AI
 
 LSP-AI is an open source [language server](https://microsoft.github.io/language-server-protocol/) that serves as a backend for performing completion with large language models and soon other AI powered functionality. Because it is a language server, it works with any editor that has LSP support.
 
