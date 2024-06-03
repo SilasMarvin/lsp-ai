@@ -8,6 +8,8 @@
 
 LSP-AI is an open source [language server](https://microsoft.github.io/language-server-protocol/) that serves as a backend for performing completion with large language models and soon other AI powered functionality. Because it is a language server, it works with any editor that has LSP support.
 
+**The goal of LSP-AI is to assist and empower software engineers by integrating with the tools they already know and love not replace software engineers**
+
 A short list of a few of the editors it works with:
 - VS Code
 - NeoVim
