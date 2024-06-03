@@ -1,0 +1,33 @@
+##############################
+## Configuration for lsp-ai ##
+##############################
+
+[language-server.lsp-ai]
+command = "lsp-ai"
+
+[language-server.lsp-ai.config.memory]
+file_store = { }
+
+[language-server.lsp-ai.config.models.model1]
+type = "mistral_fim"
+fim_endpoint = "https://api.mistral.ai/v1/fim/completions"
+model = "codestral-latest"
+auth_token_env_var_name = "MISTRAL_API_KEY"
+
+[language-server.lsp-ai.config.completion]
+model = "model1"
+
+[language-server.lsp-ai.config.completion.parameters]
+max_tokens = 64
+max_context = 1024
+
+
+#################################
+## Configuration for languages ##
+#################################
+
+[[language]]
+name = "python"
+language-servers = ["pyright", "lsp-ai"]
+
+## Configure other languages here
