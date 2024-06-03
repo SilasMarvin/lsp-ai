@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Context;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -52,6 +54,9 @@ struct AnthropicChatMessage {
 struct AnthropicChatResponse {
     content: Option<Vec<AnthropicChatMessage>>,
     error: Option<Value>,
+    #[serde(default)]
+    #[serde(flatten)]
+    pub other: HashMap<String, Value>,
 }
 
 impl Anthropic {
@@ -103,7 +108,10 @@ impl Anthropic {
         } else if let Some(mut content) = res.content {
             Ok(std::mem::take(&mut content[0].text))
         } else {
-            anyhow::bail!("Uknown error while making request to OpenAI")
+            anyhow::bail!(
+                "Uknown error while making request to Anthropic: {:?}",
+                res.other
+            )
         }
     }
 

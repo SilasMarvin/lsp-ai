@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Context;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -64,6 +66,9 @@ struct OpenAICompletionsChoice {
 struct OpenAICompletionsResponse {
     choices: Option<Vec<OpenAICompletionsChoice>>,
     error: Option<Value>,
+    #[serde(default)]
+    #[serde(flatten)]
+    pub other: HashMap<String, Value>,
 }
 
 #[derive(Deserialize)]
@@ -75,6 +80,9 @@ pub struct OpenAIChatChoices {
 pub struct OpenAIChatResponse {
     pub choices: Option<Vec<OpenAIChatChoices>>,
     pub error: Option<Value>,
+    #[serde(default)]
+    #[serde(flatten)]
+    pub other: HashMap<String, Value>,
 }
 
 impl OpenAI {
@@ -130,7 +138,10 @@ impl OpenAI {
         } else if let Some(mut choices) = res.choices {
             Ok(std::mem::take(&mut choices[0].text))
         } else {
-            anyhow::bail!("Uknown error while making request to OpenAI")
+            anyhow::bail!(
+                "Uknown error while making request to OpenAI: {:?}",
+                res.other
+            )
         }
     }
 
@@ -170,7 +181,10 @@ impl OpenAI {
         } else if let Some(choices) = res.choices {
             Ok(choices[0].message.content.clone())
         } else {
-            anyhow::bail!("Unknown error while making request to OpenAI")
+            anyhow::bail!(
+                "Unknown error while making request to OpenAI: {:?}",
+                res.other
+            )
         }
     }
 

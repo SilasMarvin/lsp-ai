@@ -97,7 +97,10 @@ impl MistralFIM {
         } else if let Some(choices) = res.choices {
             Ok(choices[0].message.content.clone())
         } else {
-            anyhow::bail!("Unknown error while making request to OpenAI")
+            anyhow::bail!(
+                "Unknown error while making request to MistralFIM: {:?}",
+                res.other
+            );
         }
     }
 }
