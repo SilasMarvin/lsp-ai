@@ -25,6 +25,8 @@ See the wiki for instructions on:
 - [Server Capabilities](https://github.com/SilasMarvin/lsp-ai/wiki/Server-Capabilities-and-Functions)
 - [and more](https://github.com/SilasMarvin/lsp-ai/wiki)
 
+LSP-AI can work as an alternative to Github Copilot.
+
 https://github.com/SilasMarvin/lsp-ai/assets/19626586/59430558-da23-4991-939d-57495061c21b
 
 *On the left: VS Code using Mistral Codestral. On the right: Helix using stabilityai/stable-code-3b*
