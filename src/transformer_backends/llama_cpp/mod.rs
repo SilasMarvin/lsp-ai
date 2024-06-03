@@ -13,7 +13,7 @@ use anyhow::Context;
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use serde_json::Value;
-use tracing::instrument;
+use tracing::{error, instrument};
 
 mod model;
 use model::Model;
@@ -47,6 +47,7 @@ impl LLaMACPP {
             .name
             .as_ref()
             .context("Please set `name` to use LLaMA.cpp")?;
+        error!("Loading in: {} - {}\nIf this model has not been loaded before it may take a few minutes to download it. Please hangtight.", configuration.model.repository, name);
         let repo = api.model(configuration.model.repository.to_owned());
         let model_path = repo.get(name)?;
         let model = Model::new(model_path, &configuration)?;
