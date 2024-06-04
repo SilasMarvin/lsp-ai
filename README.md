@@ -65,6 +65,6 @@ LSP-AI aims to fill this gap by providing a language server that integrates AI-p
 
 There is so much to do for this project and incredible new research and tools coming out everyday. Below is a list of some ideas for what we want to add next, but we welcome any contributions and discussion around prioritizing new features.
 
-- Implement semantic search-powered context building (This could be incredibly cool and powerful)
+- Implement semantic search-powered context building (This could be incredibly cool and powerful). Planning to use [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) to chunk code correctly.
 - Support for additional backends
 - Exploration of agent-based systems
