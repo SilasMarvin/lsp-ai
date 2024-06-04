@@ -33,6 +33,8 @@ https://github.com/SilasMarvin/lsp-ai/assets/19626586/59430558-da23-4991-939d-57
 
 *On the left: VS Code using Mistral Codestral. On the right: Helix using stabilityai/stable-code-3b*
 
+**Note that speed for completions is entirely dependent on the backend being used. For the fastest completions we recommend using either a small local model or Groq.**
+
 # The Case for LSP-AI
 
 **tl;dr LSP-AI abstracts complex implementation details from editor specific plugin authors, centralizing open-source development work into one shareable backend.**
