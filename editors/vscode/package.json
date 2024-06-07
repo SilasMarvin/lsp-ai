@@ -2,6 +2,7 @@
   "name": "lsp-ai",
   "version": "0.1.0",
   "displayName": "LSP-AI",
+  "publisher": "SilasMarvin",
   "description": "The official VS Code plugin for LSP-AI. LSP-AI is an open-source language server that serves as a backend for AI-powered functionality, designed to assist and empower software engineers, not replace them.",
   "icon": "logo-white-black-background-1024x1024.png",
   "repository": "https://github.com/SilasMarvin/lsp-ai",
