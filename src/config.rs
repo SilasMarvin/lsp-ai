@@ -81,13 +81,6 @@ pub struct FileStore {
     pub crawl: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Model {
-    pub repository: String,
-    pub name: Option<String>,
-}
-
 const fn n_gpu_layers_default() -> u32 {
     1000
 }
@@ -106,6 +99,7 @@ pub struct MistralFIM {
     pub fim_endpoint: Option<String>,
     // The model name
     pub model: String,
+    // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
     pub max_requests_per_second: f32,
 }
@@ -113,13 +107,17 @@ pub struct MistralFIM {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LLaMACPP {
-    // The model to use
-    #[serde(flatten)]
-    pub model: Model,
+    // Which model to use
+    pub repository: Option<String>,
+    pub name: Option<String>,
+    pub file_path: Option<String>,
+    // The layers to put on the GPU
     #[serde(default = "n_gpu_layers_default")]
     pub n_gpu_layers: u32,
+    // The context size
     #[serde(default = "n_ctx_default")]
     pub n_ctx: u32,
+    // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
     pub max_requests_per_second: f32,
 }
@@ -129,6 +127,7 @@ pub struct LLaMACPP {
 pub struct OpenAI {
     // The auth token env var name
     pub auth_token_env_var_name: Option<String>,
+    // The auth token
     pub auth_token: Option<String>,
     // The completions endpoint
     pub completions_endpoint: Option<String>,

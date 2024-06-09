@@ -9,7 +9,6 @@ use crate::{
     },
     utils::format_chat_messages,
 };
-use anyhow::Context;
 use hf_hub::api::sync::ApiBuilder;
 use serde::Deserialize;
 use serde_json::Value;
@@ -41,15 +40,22 @@ pub struct LLaMACPP {
 impl LLaMACPP {
     #[instrument]
     pub fn new(configuration: config::LLaMACPP) -> anyhow::Result<Self> {
-        let api = ApiBuilder::new().with_progress(true).build()?;
-        let name = configuration
-            .model
-            .name
-            .as_ref()
-            .context("Please set `name` to use LLaMA.cpp")?;
-        error!("Loading in: {} - {}\nIf this model has not been loaded before it may take a few minutes to download it. Please hangtight.", configuration.model.repository, name);
-        let repo = api.model(configuration.model.repository.to_owned());
-        let model_path = repo.get(name)?;
+        let model_path = match (
+            &configuration.file_path,
+            &configuration.repository,
+            &configuration.name,
+        ) {
+            (Some(file_path), _, _) => std::path::PathBuf::from(file_path),
+            (_, Some(repository), Some(name)) => {
+                let api = ApiBuilder::new().with_progress(true).build()?;
+                error!("Loading in: {} - {}\nIf this model has not been loaded before it may take a few minutes to download it. Please hangtight.", repository, name);
+                let repo = api.model(repository.clone());
+                repo.get(&name)?
+            }
+            _ => anyhow::bail!(
+                "To use llama.cpp provide either `file_path` or `repository` and `name`"
+            ),
+        };
         let model = Model::new(model_path, &configuration)?;
         Ok(Self { model })
     }
