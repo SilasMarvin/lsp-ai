@@ -29,6 +29,8 @@ pub enum ValidModel {
     Anthropic(Anthropic),
     #[serde(rename = "mistral_fim")]
     MistralFIM(MistralFIM),
+    #[serde(rename = "ollama")]
+    Ollama(Ollama),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -87,6 +89,16 @@ const fn n_gpu_layers_default() -> u32 {
 
 const fn n_ctx_default() -> u32 {
     1000
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ollama {
+    // The model name
+    pub model: String,
+    // The maximum requests per second
+    #[serde(default = "max_requests_per_second_default")]
+    pub max_requests_per_second: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -237,6 +249,7 @@ impl Config {
             ValidModel::OpenAI(open_ai) => Ok(open_ai.max_requests_per_second),
             ValidModel::Anthropic(anthropic) => Ok(anthropic.max_requests_per_second),
             ValidModel::MistralFIM(mistral_fim) => Ok(mistral_fim.max_requests_per_second),
+            ValidModel::Ollama(ollama) => Ok(ollama.max_requests_per_second),
         }
     }
 }
@@ -291,6 +304,33 @@ mod test {
                         },
                         "max_context": 1024,
                         "max_new_tokens": 32,
+                    }
+                }
+            }
+        });
+        Config::new(args).unwrap();
+    }
+
+    #[test]
+    fn ollama_config() {
+        let args = json!({
+            "initializationOptions": {
+                "memory": {
+                    "file_store": {}
+                },
+                "models": {
+                    "model1": {
+                        "type": "ollama",
+                        "model": "llama3"
+                    }
+                },
+                "completion": {
+                    "model": "model1",
+                    "parameters": {
+                        "max_context": 1024,
+                        "options": {
+                            "num_predict": 32
+                        }
                     }
                 }
             }
