@@ -36,7 +36,6 @@ pub enum ValidModel {
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
-    pub tool_calls: Option<Value>, // This is to be compatible with Mistral
 }
 
 impl ChatMessage {
@@ -44,7 +43,7 @@ impl ChatMessage {
         Self {
             role,
             content,
-            tool_calls: None,
+            // tool_calls: None,
         }
     }
 }
