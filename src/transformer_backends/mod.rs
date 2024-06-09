@@ -14,6 +14,7 @@ mod anthropic;
 #[cfg(feature = "llama_cpp")]
 mod llama_cpp;
 mod mistral_fim;
+mod ollama;
 mod open_ai;
 
 #[async_trait::async_trait]
@@ -71,6 +72,7 @@ impl TryFrom<ValidModel> for Box<dyn TransformerBackend + Send + Sync> {
             ValidModel::MistralFIM(mistral_fim) => {
                 Ok(Box::new(mistral_fim::MistralFIM::new(mistral_fim)))
             }
+            ValidModel::Ollama(ollama) => Ok(Box::new(ollama::Ollama::new(ollama))),
         }
     }
 }
