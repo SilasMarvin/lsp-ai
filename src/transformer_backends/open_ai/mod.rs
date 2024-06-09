@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::instrument;
 
@@ -71,9 +71,15 @@ struct OpenAICompletionsResponse {
     pub other: HashMap<String, Value>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct OpenAIChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
 #[derive(Deserialize)]
 pub struct OpenAIChatChoices {
-    pub message: ChatMessage,
+    pub message: OpenAIChatMessage,
 }
 
 #[derive(Deserialize)]
