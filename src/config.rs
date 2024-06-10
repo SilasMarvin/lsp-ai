@@ -68,19 +68,36 @@ pub struct FIM {
     pub end: String,
 }
 
+const fn max_crawl_memory_default() -> u32 {
+    42
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Crawl {
+    #[serde(default = "max_crawl_memory_default")]
+    pub max_crawl_memory: u32,
+    #[serde(default)]
+    pub all_files: bool,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PostgresML {
     pub database_url: Option<String>,
-    #[serde(default)]
-    pub crawl: bool,
+    pub crawl: Option<Crawl>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct FileStore {
-    #[serde(default)]
-    pub crawl: bool,
+    pub crawl: Option<Crawl>,
+}
+
+impl FileStore {
+    pub fn new_without_crawl() -> Self {
+        Self { crawl: None }
+    }
 }
 
 const fn n_gpu_layers_default() -> u32 {
@@ -189,15 +206,14 @@ pub struct ValidConfig {
 
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct ValidClientParams {
-    #[serde(alias = "rootURI")]
-    _root_uri: Option<String>,
-    _workspace_folders: Option<Vec<String>>,
+    #[serde(alias = "rootUri")]
+    pub root_uri: Option<String>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub config: ValidConfig,
-    _client_params: ValidClientParams,
+    pub client_params: ValidClientParams,
 }
 
 impl Config {
@@ -214,7 +230,7 @@ impl Config {
         let client_params: ValidClientParams = serde_json::from_value(args)?;
         Ok(Self {
             config: valid_args,
-            _client_params: client_params,
+            client_params,
         })
     }
 
@@ -260,13 +276,13 @@ impl Config {
     pub fn default_with_file_store_without_models() -> Self {
         Self {
             config: ValidConfig {
-                memory: ValidMemoryBackend::FileStore(FileStore { crawl: false }),
+                memory: ValidMemoryBackend::FileStore(FileStore { crawl: None }),
                 models: HashMap::new(),
                 completion: None,
             },
-            _client_params: ValidClientParams {
-                _root_uri: None,
-                _workspace_folders: None,
+            client_params: ValidClientParams {
+                root_uri: None,
+                workspace_folders: None,
             },
         }
     }
