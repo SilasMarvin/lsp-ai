@@ -137,7 +137,7 @@ impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
     fn try_from(configuration: Config) -> Result<Self, Self::Error> {
         match configuration.config.memory.clone() {
             ValidMemoryBackend::FileStore(file_store_config) => Ok(Box::new(
-                file_store::FileStore::new(file_store_config, configuration),
+                file_store::FileStore::new(file_store_config, configuration)?,
             )),
             ValidMemoryBackend::PostgresML(postgresml_config) => Ok(Box::new(
                 postgresml::PostgresML::new(postgresml_config, configuration)?,

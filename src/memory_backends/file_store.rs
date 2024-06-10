@@ -1,11 +1,12 @@
 use anyhow::Context;
+use ignore::WalkBuilder;
 use indexmap::IndexSet;
 use lsp_types::TextDocumentPositionParams;
 use parking_lot::Mutex;
 use ropey::Rope;
 use serde_json::Value;
-use std::collections::HashMap;
-use tracing::instrument;
+use std::collections::{HashMap, HashSet};
+use tracing::{error, instrument};
 
 use crate::{
     config::{self, Config},
@@ -15,28 +16,106 @@ use crate::{
 use super::{ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType};
 
 pub struct FileStore {
-    _crawl: bool,
-    _config: Config,
+    config: Config,
+    file_store_config: config::FileStore,
+    crawled_file_types: Mutex<HashSet<String>>,
     file_map: Mutex<HashMap<String, Rope>>,
     accessed_files: Mutex<IndexSet<String>>,
 }
 
 impl FileStore {
-    pub fn new(file_store_config: config::FileStore, config: Config) -> Self {
+    pub fn new(file_store_config: config::FileStore, config: Config) -> anyhow::Result<Self> {
+        let s = Self {
+            config,
+            file_store_config,
+            crawled_file_types: Mutex::new(HashSet::new()),
+            file_map: Mutex::new(HashMap::new()),
+            accessed_files: Mutex::new(IndexSet::new()),
+        };
+        if let Err(e) = s.maybe_do_crawl(None) {
+            error!("{e}")
+        }
+        Ok(s)
+    }
+
+    pub fn new_without_crawl(config: Config) -> Self {
         Self {
-            _crawl: file_store_config.crawl,
-            _config: config,
+            config,
+            file_store_config: config::FileStore::new_without_crawl(),
+            crawled_file_types: Mutex::new(HashSet::new()),
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
         }
     }
 
-    pub fn new_without_crawl(config: Config) -> Self {
-        Self {
-            _crawl: false,
-            _config: config,
-            file_map: Mutex::new(HashMap::new()),
-            accessed_files: Mutex::new(IndexSet::new()),
+    pub fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
+        match (
+            &self.config.client_params.root_uri,
+            &self.file_store_config.crawl,
+        ) {
+            (Some(root_uri), Some(crawl)) => {
+                let extension_to_match = triggered_file
+                    .map(|tf| {
+                        let path = std::path::Path::new(&tf);
+                        path.extension().map(|f| f.to_str().map(|f| f.to_owned()))
+                    })
+                    .flatten()
+                    .flatten();
+
+                if let Some(extension_to_match) = &extension_to_match {
+                    if self.crawled_file_types.lock().contains(extension_to_match) {
+                        return Ok(());
+                    }
+                }
+
+                if !crawl.all_files && extension_to_match.is_none() {
+                    return Ok(());
+                }
+
+                if !root_uri.starts_with("file://") {
+                    anyhow::bail!("Skipping crawling as root_uri does not begin with file://")
+                }
+
+                for result in WalkBuilder::new(&root_uri[7..]).build() {
+                    let result = result?;
+                    let path = result.path();
+                    if !path.is_dir() {
+                        if let Some(path_str) = path.to_str() {
+                            let insert_uri = format!("file://{path_str}");
+                            if self.file_map.lock().contains_key(&insert_uri) {
+                                continue;
+                            }
+                            if crawl.all_files {
+                                let contents = std::fs::read_to_string(path)?;
+                                self.file_map
+                                    .lock()
+                                    .insert(insert_uri, Rope::from_str(&contents));
+                            } else {
+                                match (
+                                    path.extension().map(|pe| pe.to_str()).flatten(),
+                                    &extension_to_match,
+                                ) {
+                                    (Some(path_extension), Some(extension_to_match)) => {
+                                        if path_extension == extension_to_match {
+                                            let contents = std::fs::read_to_string(path)?;
+                                            self.file_map
+                                                .lock()
+                                                .insert(insert_uri, Rope::from_str(&contents));
+                                        }
+                                    }
+                                    _ => continue,
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(extension_to_match) = extension_to_match {
+                    self.crawled_file_types.lock().insert(extension_to_match);
+                }
+                Ok(())
+            }
+            _ => Ok(()),
         }
     }
 
@@ -199,7 +278,10 @@ impl MemoryBackend for FileStore {
         let rope = Rope::from_str(&params.text_document.text);
         let uri = params.text_document.uri.to_string();
         self.file_map.lock().insert(uri.clone(), rope);
-        self.accessed_files.lock().shift_insert(0, uri);
+        self.accessed_files.lock().shift_insert(0, uri.clone());
+        if let Err(e) = self.maybe_do_crawl(Some(uri)) {
+            error!("{e}")
+        }
         Ok(())
     }
 
@@ -261,7 +343,7 @@ mod tests {
         } else {
             anyhow::bail!("requires a file_store_config")
         };
-        Ok(FileStore::new(file_store_config, config))
+        FileStore::new(file_store_config, config)
     }
 
     fn generate_filler_text_document(uri: Option<&str>, text: Option<&str>) -> TextDocumentItem {
