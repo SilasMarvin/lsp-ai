@@ -94,6 +94,8 @@ const fn n_ctx_default() -> u32 {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Ollama {
+    // api endpoint
+    pub api_endpoint: Option<String>,
     // The model name
     pub model: String,
     // The maximum requests per second

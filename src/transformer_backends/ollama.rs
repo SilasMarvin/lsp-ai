@@ -66,8 +66,9 @@ impl Ollama {
         params: OllamaRunParams,
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
+        let api: &String = self.configuration.api_endpoint.as_ref().expect("http://localhost:11434");
         let res: OllamaCompletionsResponse = client
-            .post("http://localhost:11434/api/generate")
+            .post(format!("{}/api/generate",api))
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .json(&json!({
@@ -100,8 +101,9 @@ impl Ollama {
         params: OllamaRunParams,
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
+        let api: &String = self.configuration.api_endpoint.as_ref().expect("http://localhost:11434");
         let res: OllamaChatResponse = client
-            .post("http://localhost:11434/api/chat")
+            .post(format!("{}/api/chat",api))
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .json(&json!({
