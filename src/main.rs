@@ -84,7 +84,6 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     let connection = Arc::new(connection);
 
     // Our channel we use to communicate with our transformer worker
-    // let last_worker_request = Arc::new(Mutex::new(None));
     let (transformer_tx, transformer_rx) = mpsc::channel();
 
     // The channel we use to communicate with our memory worker
@@ -95,8 +94,6 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
 
     // Setup our transformer worker
-    // let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
-    //     config.clone().try_into()?;
     let transformer_backends: HashMap<String, Box<dyn TransformerBackend + Send + Sync>> = config
         .config
         .models

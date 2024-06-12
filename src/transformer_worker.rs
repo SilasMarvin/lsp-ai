@@ -17,7 +17,7 @@ use crate::custom_requests::generation_stream::GenerationStreamParams;
 use crate::memory_backends::Prompt;
 use crate::memory_worker::{self, FilterRequest, PromptRequest};
 use crate::transformer_backends::TransformerBackend;
-use crate::utils::ToResponseError;
+use crate::utils::{ToResponseError, TOKIO_RUNTIME};
 
 #[derive(Clone, Debug)]
 pub struct CompletionRequest {
@@ -189,10 +189,6 @@ fn do_run(
     config: Config,
 ) -> anyhow::Result<()> {
     let transformer_backends = Arc::new(transformer_backends);
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4)
-        .enable_all()
-        .build()?;
 
     // If they have disabled completions, this function will fail. We set it to MIN_POSITIVE to never process a completions request
     let max_requests_per_second = config
@@ -206,7 +202,7 @@ fn do_run(
         let task_transformer_backends = transformer_backends.clone();
         let task_memory_backend_tx = memory_backend_tx.clone();
         let task_config = config.clone();
-        runtime.spawn(async move {
+        TOKIO_RUNTIME.spawn(async move {
             dispatch_request(
                 request,
                 task_connection,

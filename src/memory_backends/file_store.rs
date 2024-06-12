@@ -1,36 +1,36 @@
 use anyhow::Context;
-use ignore::WalkBuilder;
 use indexmap::IndexSet;
 use lsp_types::TextDocumentPositionParams;
 use parking_lot::Mutex;
 use ropey::Rope;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tracing::{error, instrument};
 
 use crate::{
     config::{self, Config},
+    crawl::Crawl,
     utils::tokens_to_estimated_characters,
 };
 
 use super::{ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType};
 
 pub struct FileStore {
-    config: Config,
-    file_store_config: config::FileStore,
-    crawled_file_types: Mutex<HashSet<String>>,
     file_map: Mutex<HashMap<String, Rope>>,
     accessed_files: Mutex<IndexSet<String>>,
+    crawl: Option<Mutex<Crawl>>,
 }
 
 impl FileStore {
-    pub fn new(file_store_config: config::FileStore, config: Config) -> anyhow::Result<Self> {
+    pub fn new(mut file_store_config: config::FileStore, config: Config) -> anyhow::Result<Self> {
+        let crawl = file_store_config
+            .crawl
+            .take()
+            .map(|x| Mutex::new(Crawl::new(x, config.clone())));
         let s = Self {
-            config,
-            file_store_config,
-            crawled_file_types: Mutex::new(HashSet::new()),
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
+            crawl,
         };
         if let Err(e) = s.maybe_do_crawl(None) {
             error!("{e}")
@@ -38,75 +38,21 @@ impl FileStore {
         Ok(s)
     }
 
-    pub fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
-        match (
-            &self.config.client_params.root_uri,
-            &self.file_store_config.crawl,
-        ) {
-            (Some(root_uri), Some(crawl)) => {
-                let extension_to_match = triggered_file
-                    .map(|tf| {
-                        let path = std::path::Path::new(&tf);
-                        path.extension().map(|f| f.to_str().map(|f| f.to_owned()))
-                    })
-                    .flatten()
-                    .flatten();
-
-                if let Some(extension_to_match) = &extension_to_match {
-                    if self.crawled_file_types.lock().contains(extension_to_match) {
-                        return Ok(());
-                    }
-                }
-
-                if !crawl.all_files && extension_to_match.is_none() {
+    fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
+        if let Some(crawl) = &self.crawl {
+            crawl.lock().maybe_do_crawl(triggered_file, |path| {
+                let insert_uri = format!("file://{path}");
+                if self.file_map.lock().contains_key(&insert_uri) {
                     return Ok(());
                 }
-
-                if !root_uri.starts_with("file://") {
-                    anyhow::bail!("Skipping crawling as root_uri does not begin with file://")
-                }
-
-                for result in WalkBuilder::new(&root_uri[7..]).build() {
-                    let result = result?;
-                    let path = result.path();
-                    if !path.is_dir() {
-                        if let Some(path_str) = path.to_str() {
-                            let insert_uri = format!("file://{path_str}");
-                            if self.file_map.lock().contains_key(&insert_uri) {
-                                continue;
-                            }
-                            if crawl.all_files {
-                                let contents = std::fs::read_to_string(path)?;
-                                self.file_map
-                                    .lock()
-                                    .insert(insert_uri, Rope::from_str(&contents));
-                            } else {
-                                match (
-                                    path.extension().map(|pe| pe.to_str()).flatten(),
-                                    &extension_to_match,
-                                ) {
-                                    (Some(path_extension), Some(extension_to_match)) => {
-                                        if path_extension == extension_to_match {
-                                            let contents = std::fs::read_to_string(path)?;
-                                            self.file_map
-                                                .lock()
-                                                .insert(insert_uri, Rope::from_str(&contents));
-                                        }
-                                    }
-                                    _ => continue,
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let Some(extension_to_match) = extension_to_match {
-                    self.crawled_file_types.lock().insert(extension_to_match);
-                }
+                let contents = std::fs::read_to_string(path)?;
+                self.file_map
+                    .lock()
+                    .insert(insert_uri, Rope::from_str(&contents));
                 Ok(())
-            }
-            _ => Ok(()),
+            })?;
         }
+        Ok(())
     }
 
     fn get_rope_for_position(
@@ -226,15 +172,20 @@ impl FileStore {
             }
         })
     }
+
+    pub fn get_file_contents(&self, uri: &str) -> Option<String> {
+        self.file_map.lock().get(uri).clone().map(|x| x.to_string())
+    }
+
+    pub fn contains_file(&self, uri: &str) -> bool {
+        self.file_map.lock().contains_key(uri)
+    }
 }
 
 #[async_trait::async_trait]
 impl MemoryBackend for FileStore {
     #[instrument(skip(self))]
-    async fn get_filter_text(
-        &self,
-        position: &TextDocumentPositionParams,
-    ) -> anyhow::Result<String> {
+    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
         let rope = self
             .file_map
             .lock()
@@ -243,8 +194,9 @@ impl MemoryBackend for FileStore {
             .clone();
         let line = rope
             .get_line(position.position.line as usize)
-            .context("Error getting filter_text")?
-            .slice(0..position.position.character as usize)
+            .context("Error getting filter text")?
+            .get_slice(0..position.position.character as usize)
+            .context("Error getting filter text")?
             .to_string();
         Ok(line)
     }
@@ -261,7 +213,7 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    async fn opened_text_document(
+    fn opened_text_document(
         &self,
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
@@ -276,7 +228,7 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    async fn changed_text_document(
+    fn changed_text_document(
         &self,
         params: lsp_types::DidChangeTextDocumentParams,
     ) -> anyhow::Result<()> {
@@ -303,7 +255,7 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    async fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+    fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         for file_rename in params.files {
             let mut file_map = self.file_map.lock();
             if let Some(rope) = file_map.remove(&file_rename.old_uri) {
@@ -353,7 +305,7 @@ mod tests {
             text_document: generate_filler_text_document(None, None),
         };
         let file_store = generate_base_file_store()?;
-        file_store.opened_text_document(params).await?;
+        file_store.opened_text_document(params)?;
         let file = file_store
             .file_map
             .lock()
@@ -370,7 +322,7 @@ mod tests {
             text_document: generate_filler_text_document(None, None),
         };
         let file_store = generate_base_file_store()?;
-        file_store.opened_text_document(params).await?;
+        file_store.opened_text_document(params)?;
 
         let params = RenameFilesParams {
             files: vec![FileRename {
@@ -378,7 +330,7 @@ mod tests {
                 new_uri: "file://filler2/".to_string(),
             }],
         };
-        file_store.renamed_files(params).await?;
+        file_store.renamed_files(params)?;
 
         let file = file_store
             .file_map
@@ -398,7 +350,7 @@ mod tests {
             text_document: text_document.clone(),
         };
         let file_store = generate_base_file_store()?;
-        file_store.opened_text_document(params).await?;
+        file_store.opened_text_document(params)?;
 
         let params = lsp_types::DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
@@ -420,7 +372,7 @@ mod tests {
                 text: "a".to_string(),
             }],
         };
-        file_store.changed_text_document(params).await?;
+        file_store.changed_text_document(params)?;
         let file = file_store
             .file_map
             .lock()
@@ -440,7 +392,7 @@ mod tests {
                 text: "abc".to_string(),
             }],
         };
-        file_store.changed_text_document(params).await?;
+        file_store.changed_text_document(params)?;
         let file = file_store
             .file_map
             .lock()
@@ -472,7 +424,7 @@ The end with a trailing new line
             text_document: text_document.clone(),
         };
         let file_store = generate_base_file_store()?;
-        file_store.opened_text_document(params).await?;
+        file_store.opened_text_document(params)?;
 
         let prompt = file_store
             .build_prompt(
@@ -568,7 +520,7 @@ The end with a trailing new line
         let params = lsp_types::DidOpenTextDocumentParams {
             text_document: text_document2.clone(),
         };
-        file_store.opened_text_document(params).await?;
+        file_store.opened_text_document(params)?;
 
         let prompt = file_store
             .build_prompt(
@@ -599,7 +551,7 @@ The end with a trailing new line
             text_document: text_document.clone(),
         };
         let file_store = generate_base_file_store()?;
-        file_store.opened_text_document(params).await?;
+        file_store.opened_text_document(params)?;
 
         // Test chat
         let prompt = file_store

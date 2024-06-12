@@ -1,131 +1,191 @@
 use std::{
-    sync::mpsc::{self, Sender},
+    sync::{
+        mpsc::{self, Sender},
+        Arc,
+    },
     time::Duration,
 };
 
 use anyhow::Context;
 use lsp_types::TextDocumentPositionParams;
+use parking_lot::Mutex;
 use pgml::{Collection, Pipeline};
 use serde_json::{json, Value};
 use tokio::time;
-use tracing::instrument;
+use tracing::{error, instrument};
 
 use crate::{
     config::{self, Config},
-    utils::tokens_to_estimated_characters,
+    crawl::Crawl,
+    utils::{tokens_to_estimated_characters, TOKIO_RUNTIME},
 };
 
 use super::{
-    file_store::FileStore, ContextAndCodePrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType,
+    file_store::FileStore, ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt,
+    PromptType,
 };
 
+#[derive(Clone)]
 pub struct PostgresML {
     _config: Config,
-    file_store: FileStore,
+    file_store: Arc<FileStore>,
     collection: Collection,
     pipeline: Pipeline,
     debounce_tx: Sender<String>,
-    added_pipeline: bool,
+    crawl: Option<Arc<Mutex<Crawl>>>,
 }
 
 impl PostgresML {
+    #[instrument]
     pub fn new(
-        postgresml_config: config::PostgresML,
+        mut postgresml_config: config::PostgresML,
         configuration: Config,
     ) -> anyhow::Result<Self> {
-        let file_store_config: config::FileStore = postgresml_config.clone().into();
-        let file_store = FileStore::new(file_store_config, configuration.clone())?;
+        let crawl = postgresml_config
+            .crawl
+            .take()
+            .map(|x| Arc::new(Mutex::new(Crawl::new(x, configuration.clone()))));
+        let file_store = Arc::new(FileStore::new(
+            config::FileStore::new_without_crawl(),
+            configuration.clone(),
+        )?);
         let database_url = if let Some(database_url) = postgresml_config.database_url {
             database_url
         } else {
             std::env::var("PGML_DATABASE_URL")?
         };
-        // TODO: Think on the naming of the collection
-        // Maybe filter on metadata or I'm not sure
-        let collection = Collection::new("test-lsp-ai-3", Some(database_url))?;
-        // TODO: Review the pipeline
-        let pipeline = Pipeline::new(
+
+        // TODO: Think through Collections and Pipelines
+        let mut collection = Collection::new("test-lsp-ai-5", Some(database_url))?;
+        let mut pipeline = Pipeline::new(
             "v1",
             Some(
                 json!({
                     "text": {
-                        "splitter": {
-                            "model": "recursive_character",
-                            "parameters": {
-                                "chunk_size": 1500,
-                                "chunk_overlap": 40
-                            }
-                        },
                         "semantic_search": {
-                            "model": "intfloat/e5-small",
+                            "model": "intfloat/e5-small-v2",
+                            "parameters": {
+                                "prompt": "passage: "
+                            }
                         }
                     }
                 })
                 .into(),
             ),
         )?;
+
+        // Add the Pipeline to the Collection
+        TOKIO_RUNTIME.block_on(async {
+            collection
+                .add_pipeline(&mut pipeline)
+                .await
+                .context("PGML - Error adding pipeline to collection")
+        })?;
+
         // Setup up a debouncer for changed text documents
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()?;
-        let mut task_collection = collection.clone();
         let (debounce_tx, debounce_rx) = mpsc::channel::<String>();
-        runtime.spawn(async move {
+        let mut task_collection = collection.clone();
+        let task_file_store = file_store.clone();
+        TOKIO_RUNTIME.spawn(async move {
             let duration = Duration::from_millis(500);
-            let mut file_paths = Vec::new();
+            let mut file_uris = Vec::new();
             loop {
                 time::sleep(duration).await;
-                let new_paths: Vec<String> = debounce_rx.try_iter().collect();
-                if !new_paths.is_empty() {
-                    for path in new_paths {
-                        if !file_paths.iter().any(|p| *p == path) {
-                            file_paths.push(path);
+                let new_uris: Vec<String> = debounce_rx.try_iter().collect();
+                if !new_uris.is_empty() {
+                    for uri in new_uris {
+                        if !file_uris.iter().any(|p| *p == uri) {
+                            file_uris.push(uri);
                         }
                     }
                 } else {
-                    if file_paths.is_empty() {
+                    if file_uris.is_empty() {
                         continue;
                     }
-                    let documents = file_paths
-                        .into_iter()
-                        .map(|path| {
-                            let text = std::fs::read_to_string(&path)
-                                .unwrap_or_else(|_| panic!("Error reading path: {}", path));
-                            json!({
-                                "id": path,
-                                "text": text
-                            })
-                            .into()
+                    let documents = match file_uris
+                        .iter()
+                        .map(|uri| {
+                            let text = task_file_store
+                                .get_file_contents(&uri)
+                                .context("Error reading file contents from file_store")?;
+                            anyhow::Ok(
+                                json!({
+                                    "id": uri,
+                                    "text": text
+                                })
+                                .into(),
+                            )
                         })
-                        .collect();
-                    task_collection
+                        .collect()
+                    {
+                        Ok(documents) => documents,
+                        Err(e) => {
+                            error!("{e}");
+                            continue;
+                        }
+                    };
+                    if let Err(e) = task_collection
                         .upsert_documents(documents, None)
                         .await
-                        .expect("PGML - Error adding pipeline to collection");
-                    file_paths = Vec::new();
+                        .context("PGML - Error adding pipeline to collection")
+                    {
+                        error!("{e}");
+                        continue;
+                    }
+                    file_uris = Vec::new();
                 }
             }
         });
-        Ok(Self {
+
+        let s = Self {
             _config: configuration,
             file_store,
             collection,
             pipeline,
             debounce_tx,
-            added_pipeline: false,
-        })
+            crawl,
+        };
+
+        if let Err(e) = s.maybe_do_crawl(None) {
+            error!("{e}")
+        }
+        Ok(s)
+    }
+
+    fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
+        if let Some(crawl) = &self.crawl {
+            let mut _collection = self.collection.clone();
+            let mut _pipeline = self.pipeline.clone();
+            let mut documents: Vec<pgml::types::Json> = vec![];
+            crawl.lock().maybe_do_crawl(triggered_file, |path| {
+                let uri = format!("file://{path}");
+                // This means it has been opened before
+                if self.file_store.contains_file(&uri) {
+                    return Ok(());
+                }
+                // Get the contents, split, and upsert it
+                let contents = std::fs::read_to_string(path)?;
+                documents.push(
+                    json!({
+                        "id": uri,
+                        "text": contents
+                    })
+                    .into(),
+                );
+                // Track the size of the documents we have
+                // If it is over some amount in bytes, upsert it
+                Ok(())
+            })?;
+        }
+        Ok(())
     }
 }
 
 #[async_trait::async_trait]
 impl MemoryBackend for PostgresML {
     #[instrument(skip(self))]
-    async fn get_filter_text(
-        &self,
-        position: &TextDocumentPositionParams,
-    ) -> anyhow::Result<String> {
-        self.file_store.get_filter_text(position).await
+    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
+        self.file_store.get_filter_text(position)
     }
 
     #[instrument(skip(self))]
@@ -136,9 +196,21 @@ impl MemoryBackend for PostgresML {
         params: &Value,
     ) -> anyhow::Result<Prompt> {
         let params: MemoryRunParams = params.try_into()?;
+
+        // Build the query
         let query = self
             .file_store
             .get_characters_around_position(position, 512)?;
+
+        // Get the code around the Cursor
+        let mut file_store_params = params.clone();
+        file_store_params.max_context_length = 512;
+        let code = self
+            .file_store
+            .build_code(position, prompt_type, file_store_params)?;
+
+        // Get the context
+        let limit = params.max_context_length / 512;
         let res = self
             .collection
             .vector_search_local(
@@ -146,11 +218,14 @@ impl MemoryBackend for PostgresML {
                     "query": {
                         "fields": {
                             "text": {
-                                "query": query
+                                "query": query,
+                                "parameters": {
+                                    "prompt": "query: "
+                                }
                             }
                         },
                     },
-                    "limit": 5
+                    "limit": limit
                 })
                 .into(),
                 &self.pipeline,
@@ -166,90 +241,93 @@ impl MemoryBackend for PostgresML {
             })
             .collect::<anyhow::Result<Vec<String>>>()?
             .join("\n\n");
-        let mut file_store_params = params.clone();
-        file_store_params.max_context_length = 512;
-        let code = self
-            .file_store
-            .build_code(position, prompt_type, file_store_params)?;
-        let code: ContextAndCodePrompt = code.try_into()?;
-        let code = code.code;
-        let max_characters = tokens_to_estimated_characters(params.max_context_length);
-        let _context: String = context
-            .chars()
-            .take(max_characters - code.chars().count())
-            .collect();
-        // We need to redo this section to work with the new memory backend system
-        todo!()
-        // Ok(Prompt::new(context, code))
+
+        let chars = tokens_to_estimated_characters(params.max_context_length.saturating_sub(512));
+        let context = &context[..chars.min(context.len())];
+
+        // Reconstruct the Prompts
+        Ok(match code {
+            Prompt::ContextAndCode(context_and_code) => Prompt::ContextAndCode(
+                ContextAndCodePrompt::new(context.to_owned(), context_and_code.code),
+            ),
+            Prompt::FIM(fim) => Prompt::FIM(FIMPrompt::new(
+                format!("{context}\n\n{}", fim.prompt),
+                fim.suffix,
+            )),
+        })
     }
 
     #[instrument(skip(self))]
-    async fn opened_text_document(
+    fn opened_text_document(
         &self,
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
-        let text = params.text_document.text.clone();
-        let path = params.text_document.uri.path().to_owned();
-        let task_added_pipeline = self.added_pipeline;
+        self.file_store.opened_text_document(params.clone())?;
         let mut task_collection = self.collection.clone();
-        let mut task_pipeline = self.pipeline.clone();
-        if !task_added_pipeline {
-            task_collection
-                .add_pipeline(&mut task_pipeline)
-                .await
-                .context("PGML - Error adding pipeline to collection")?;
-        }
-        task_collection
-            .upsert_documents(
-                vec![json!({
-                    "id": path,
-                    "text": text
-                })
-                .into()],
-                None,
-            )
-            .await
-            .context("PGML - Error upserting documents")?;
-        self.file_store.opened_text_document(params).await
-    }
-
-    #[instrument(skip(self))]
-    async fn changed_text_document(
-        &self,
-        params: lsp_types::DidChangeTextDocumentParams,
-    ) -> anyhow::Result<()> {
-        let path = params.text_document.uri.path().to_owned();
-        self.debounce_tx.send(path)?;
-        self.file_store.changed_text_document(params).await
-    }
-
-    #[instrument(skip(self))]
-    async fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
-        let mut task_collection = self.collection.clone();
-        let task_params = params.clone();
-        for file in task_params.files {
-            task_collection
-                .delete_documents(
-                    json!({
-                        "id": file.old_uri
-                    })
-                    .into(),
-                )
-                .await
-                .expect("PGML - Error deleting file");
-            let text = std::fs::read_to_string(&file.new_uri).expect("PGML - Error reading file");
+        let saved_uri = params.text_document.uri.to_string();
+        TOKIO_RUNTIME.spawn(async move {
+            let text = params.text_document.text.clone();
+            let uri = params.text_document.uri.to_string();
             task_collection
                 .upsert_documents(
                     vec![json!({
-                        "id": file.new_uri,
+                        "id": uri,
                         "text": text
                     })
                     .into()],
                     None,
                 )
                 .await
-                .expect("PGML - Error adding pipeline to collection");
+                .expect("PGML - Error upserting documents");
+        });
+        if let Err(e) = self.maybe_do_crawl(Some(saved_uri)) {
+            error!("{e}")
         }
-        self.file_store.renamed_files(params).await
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    fn changed_text_document(
+        &self,
+        params: lsp_types::DidChangeTextDocumentParams,
+    ) -> anyhow::Result<()> {
+        self.file_store.changed_text_document(params.clone())?;
+        let uri = params.text_document.uri.to_string();
+        self.debounce_tx.send(uri)?;
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+        self.file_store.renamed_files(params.clone())?;
+        let mut task_collection = self.collection.clone();
+        let task_params = params.clone();
+        TOKIO_RUNTIME.spawn(async move {
+            for file in task_params.files {
+                task_collection
+                    .delete_documents(
+                        json!({
+                            "id": file.old_uri
+                        })
+                        .into(),
+                    )
+                    .await
+                    .expect("PGML - Error deleting file");
+                let text =
+                    std::fs::read_to_string(&file.new_uri).expect("PGML - Error reading file");
+                task_collection
+                    .upsert_documents(
+                        vec![json!({
+                            "id": file.new_uri,
+                            "text": text
+                        })
+                        .into()],
+                        None,
+                    )
+                    .await
+                    .expect("PGML - Error adding pipeline to collection");
+            }
+        });
+        Ok(())
     }
 }
