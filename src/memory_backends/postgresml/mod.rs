@@ -33,7 +33,8 @@ impl PostgresML {
         postgresml_config: config::PostgresML,
         configuration: Config,
     ) -> anyhow::Result<Self> {
-        let file_store = FileStore::new_without_crawl(configuration.clone());
+        let file_store_config: config::FileStore = postgresml_config.clone().into();
+        let file_store = FileStore::new(file_store_config, configuration.clone())?;
         let database_url = if let Some(database_url) = postgresml_config.database_url {
             database_url
         } else {
@@ -196,7 +197,7 @@ impl MemoryBackend for PostgresML {
             task_collection
                 .add_pipeline(&mut task_pipeline)
                 .await
-                .expect("PGML - Error adding pipeline to collection");
+                .context("PGML - Error adding pipeline to collection")?;
         }
         task_collection
             .upsert_documents(
@@ -208,7 +209,7 @@ impl MemoryBackend for PostgresML {
                 None,
             )
             .await
-            .expect("PGML - Error upserting documents");
+            .context("PGML - Error upserting documents")?;
         self.file_store.opened_text_document(params).await
     }
 

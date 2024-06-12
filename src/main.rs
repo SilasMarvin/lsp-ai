@@ -14,6 +14,7 @@ use tracing::error;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 mod config;
+mod crawl;
 mod custom_requests;
 mod memory_backends;
 mod memory_worker;
