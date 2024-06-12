@@ -117,6 +117,12 @@ impl FileStore {
     }
 }
 
+impl From<PostgresML> for FileStore {
+    fn from(value: PostgresML) -> Self {
+        Self { crawl: value.crawl }
+    }
+}
+
 const fn n_gpu_layers_default() -> u32 {
     1000
 }
@@ -326,10 +332,7 @@ impl Config {
                 models: HashMap::new(),
                 completion: None,
             },
-            client_params: ValidClientParams {
-                root_uri: None,
-                workspace_folders: None,
-            },
+            client_params: ValidClientParams { root_uri: None },
         }
     }
 }

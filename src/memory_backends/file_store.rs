@@ -38,16 +38,6 @@ impl FileStore {
         Ok(s)
     }
 
-    pub fn new_without_crawl(config: Config) -> Self {
-        Self {
-            config,
-            file_store_config: config::FileStore::new_without_crawl(),
-            crawled_file_types: Mutex::new(HashSet::new()),
-            file_map: Mutex::new(HashMap::new()),
-            accessed_files: Mutex::new(IndexSet::new()),
-        }
-    }
-
     pub fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
         match (
             &self.config.client_params.root_uri,
