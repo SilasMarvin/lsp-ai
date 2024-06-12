@@ -67,7 +67,12 @@ impl Ollama {
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let res: OllamaCompletionsResponse = client
-            .post("http://localhost:11434/api/generate")
+            .post(self
+                .configuration
+                .generate_endpoint
+                .as_deref()
+                .unwrap_or("http://localhost:11434/api/generate")
+            )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .json(&json!({
@@ -101,7 +106,12 @@ impl Ollama {
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let res: OllamaChatResponse = client
-            .post("http://localhost:11434/api/chat")
+            .post(self
+                .configuration
+                .chat_endpoint
+                .as_deref()
+                .unwrap_or("http://localhost:11434/api/chat")
+            )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .json(&json!({
