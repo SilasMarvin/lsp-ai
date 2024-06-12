@@ -70,8 +70,8 @@ impl Ollama {
             .post(self
                 .configuration
                 .generate_endpoint
-                .as_ref()
-                .unwrap_or(&"http://localhost:11434/api/generate".to_string())
+                .as_deref()
+                .unwrap_or("http://localhost:11434/api/generate")
             )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
@@ -109,8 +109,8 @@ impl Ollama {
             .post(self
                 .configuration
                 .chat_endpoint
-                .as_ref()
-                .unwrap_or(&"http://localhost:11434/api/chat".to_string())
+                .as_deref()
+                .unwrap_or("http://localhost:11434/api/chat")
             )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
