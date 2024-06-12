@@ -94,9 +94,9 @@ const fn n_ctx_default() -> u32 {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Ollama {
-    // The completions endpoint
-    pub completions_endpoint: Option<String>,
-    // The chat endpoint
+    // The generate endpoint, default: 'http://localhost:11434/api/generate'
+    pub generate_endpoint: Option<String>,
+    // The chat endpoint, default: 'http://localhost:11434/api/chat'
     pub chat_endpoint: Option<String>,
     // The model name
     pub model: String,

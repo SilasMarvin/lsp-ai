@@ -1,4 +1,3 @@
-use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -68,11 +67,11 @@ impl Ollama {
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let res: OllamaCompletionsResponse = client
-            .post(
-                self.configuration
-                    .completions_endpoint
-                    .as_ref()
-                    .context("specify `completions_endpoint` to use completions. Wanted to use `chat` instead? Please specify `chat_endpoint` and `messages`.")?,
+            .post(self
+                .configuration
+                .generate_endpoint
+                .as_ref()
+                .unwrap_or(&"http://localhost:11434/api/generate".to_string())
             )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
@@ -107,11 +106,11 @@ impl Ollama {
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let res: OllamaChatResponse = client
-            .post(
-                self.configuration
-                    .chat_endpoint
-                    .as_ref()
-                    .context("must specify `chat_endpoint` to use chat")?,
+            .post(self
+                .configuration
+                .chat_endpoint
+                .as_ref()
+                .unwrap_or(&"http://localhost:11434/api/chat".to_string())
             )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
