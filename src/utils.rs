@@ -1,6 +1,16 @@
 use lsp_server::ResponseError;
+use once_cell::sync::Lazy;
+use tokio::runtime;
 
 use crate::{config::ChatMessage, memory_backends::ContextAndCodePrompt};
+
+pub static TOKIO_RUNTIME: Lazy<runtime::Runtime> = Lazy::new(|| {
+    runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .expect("Error building tokio runtime")
+});
 
 pub trait ToResponseError {
     fn to_response_error(&self, code: i32) -> ResponseError;

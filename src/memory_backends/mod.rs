@@ -109,22 +109,16 @@ pub trait MemoryBackend {
     async fn init(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
-    async fn changed_text_document(
-        &self,
-        params: DidChangeTextDocumentParams,
-    ) -> anyhow::Result<()>;
-    async fn renamed_files(&self, params: RenameFilesParams) -> anyhow::Result<()>;
+    fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
+    fn changed_text_document(&self, params: DidChangeTextDocumentParams) -> anyhow::Result<()>;
+    fn renamed_files(&self, params: RenameFilesParams) -> anyhow::Result<()>;
+    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String>;
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
         params: Value,
     ) -> anyhow::Result<Prompt>;
-    async fn get_filter_text(
-        &self,
-        position: &TextDocumentPositionParams,
-    ) -> anyhow::Result<String>;
 }
 
 impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
