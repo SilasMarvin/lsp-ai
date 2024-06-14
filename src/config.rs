@@ -9,6 +9,21 @@ const fn max_requests_per_second_default() -> f32 {
     1.
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PostProcess {
+    pub remove_duplicate_start: bool,
+    pub remove_duplicate_end: bool,
+}
+
+impl Default for PostProcess {
+    fn default() -> Self {
+        Self {
+            remove_duplicate_start: true,
+            remove_duplicate_end: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub enum ValidMemoryBackend {
     #[serde(rename = "file_store")]
@@ -177,10 +192,12 @@ pub struct Anthropic {
 pub struct Completion {
     // The model key to use
     pub model: String,
-
     // Args are deserialized by the backend using them
     #[serde(default)]
     pub parameters: Kwargs,
+    // Parameters for post processing
+    #[serde(default)]
+    pub post_process: PostProcess,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -228,6 +245,10 @@ impl Config {
 
     pub fn is_completions_enabled(&self) -> bool {
         self.config.completion.is_some()
+    }
+
+    pub fn get_completions_post_process(&self) -> Option<&PostProcess> {
+        self.config.completion.as_ref().map(|x| &x.post_process)
     }
 
     pub fn get_completion_transformer_max_requests_per_second(&self) -> anyhow::Result<f32> {
@@ -335,6 +356,10 @@ mod test {
                         "options": {
                             "num_predict": 32
                         }
+                    },
+                    "post_process": {
+                        "remove_duplicate_start": true,
+                        "remove_duplicate_end": true,
                     }
                 }
             }
