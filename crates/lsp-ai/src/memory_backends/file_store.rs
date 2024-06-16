@@ -4,8 +4,8 @@ use lsp_types::TextDocumentPositionParams;
 use parking_lot::Mutex;
 use ropey::Rope;
 use serde_json::Value;
-use std::collections::HashMap;
-use tracing::{error, instrument};
+use std::{collections::HashMap, io::Read};
+use tracing::{error, instrument, warn};
 use tree_sitter::{InputEdit, Point, Tree};
 
 use crate::{
@@ -114,18 +114,37 @@ impl FileStore {
     }
 
     fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
+        let mut total_bytes = 0;
+        let mut current_bytes = 0;
         if let Some(crawl) = &self.crawl {
             crawl
                 .lock()
                 .maybe_do_crawl(triggered_file, |config, path| {
+                    // Break if total bytes is over the max crawl memory
+                    if total_bytes as u64 >= config.max_crawl_memory {
+                        warn!("Ending crawl early due to `max_crawl_memory` resetraint");
+                        return Ok(false);
+                    }
+                    // This means it has been opened before
                     let insert_uri = format!("file://{path}");
                     if self.file_map.lock().contains_key(&insert_uri) {
-                        return Ok(());
+                        return Ok(true);
                     }
-                    // TODO: actually limit files based on config
-                    let contents = std::fs::read_to_string(path)?;
+                    // Open the file and see if it is small enough to read
+                    let mut f = std::fs::File::open(path)?;
+                    let metadata = f.metadata()?;
+                    if metadata.len() > config.max_file_size {
+                        warn!("Skipping file: {path} because it is too large");
+                        return Ok(true);
+                    }
+                    // Read the file contents
+                    let mut contents = vec![];
+                    f.read_to_end(&mut contents)?;
+                    let contents = String::from_utf8(contents)?;
+                    current_bytes += contents.len();
+                    total_bytes += contents.len();
                     self.add_new_file(&insert_uri, contents);
-                    Ok(())
+                    Ok(true)
                 })?;
         }
         Ok(())
