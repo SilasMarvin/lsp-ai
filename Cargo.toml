@@ -33,6 +33,14 @@ pgml = "1.0.4"
 tokio = { version = "1.36.0", features = ["rt-multi-thread", "time"] }
 indexmap = "2.2.5"
 async-trait = "0.1.78"
+tree-sitter = "0.22"
+# splitter-tree-sitter = { git = "https://github.com/SilasMarvin/splitter-tree-sitter" }
+splitter-tree-sitter = { path = "../../splitter-tree-sitter" }
+# utils-tree-sitter = { git = "https://github.com/SilasMarvin/utils-tree-sitter" }
+utils-tree-sitter = { path = "../../utils-tree-sitter", features = ["all"] }
+
+[build-dependencies]
+cc="*"
 
 [features]
 default = []

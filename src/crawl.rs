@@ -18,10 +18,14 @@ impl Crawl {
         }
     }
 
+    pub fn crawl_config(&self) -> &config::Crawl {
+        &self.crawl_config
+    }
+
     pub fn maybe_do_crawl(
         &mut self,
         triggered_file: Option<String>,
-        mut f: impl FnMut(&str) -> anyhow::Result<()>,
+        mut f: impl FnMut(&config::Crawl, &str) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         if let Some(root_uri) = &self.config.client_params.root_uri {
             if !root_uri.starts_with("file://") {
@@ -52,7 +56,7 @@ impl Crawl {
                 if !path.is_dir() {
                     if let Some(path_str) = path.to_str() {
                         if self.crawl_config.all_files {
-                            f(path_str)?;
+                            f(&self.crawl_config, path_str)?;
                         } else {
                             match (
                                 path.extension().map(|pe| pe.to_str()).flatten(),
@@ -60,7 +64,7 @@ impl Crawl {
                             ) {
                                 (Some(path_extension), Some(extension_to_match)) => {
                                     if path_extension == extension_to_match {
-                                        f(path_str)?;
+                                        f(&self.crawl_config, path_str)?;
                                     }
                                 }
                                 _ => continue,

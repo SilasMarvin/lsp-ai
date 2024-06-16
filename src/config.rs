@@ -10,6 +10,43 @@ const fn max_requests_per_second_default() -> f32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub enum ValidSplitter {
+    #[serde(rename = "tree_sitter")]
+    TreeSitter(TreeSitter),
+}
+
+impl Default for ValidSplitter {
+    fn default() -> Self {
+        ValidSplitter::TreeSitter(TreeSitter::default())
+    }
+}
+
+const fn chunk_size_default() -> usize {
+    1500
+}
+
+const fn chunk_overlap_default() -> usize {
+    0
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TreeSitter {
+    #[serde(default = "chunk_size_default")]
+    pub chunk_size: usize,
+    #[serde(default = "chunk_overlap_default")]
+    pub chunk_overlap: usize,
+}
+
+impl Default for TreeSitter {
+    fn default() -> Self {
+        Self {
+            chunk_size: 1500,
+            chunk_overlap: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub enum ValidMemoryBackend {
     #[serde(rename = "file_store")]
     FileStore(FileStore),
@@ -68,15 +105,21 @@ pub struct FIM {
     pub end: String,
 }
 
-const fn max_crawl_memory_default() -> u32 {
+const fn max_crawl_memory_default() -> u64 {
     42
+}
+
+const fn max_crawl_file_size_default() -> u64 {
+    10_000_000
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Crawl {
+    #[serde(default = "max_crawl_file_size_default")]
+    pub max_file_size: u64,
     #[serde(default = "max_crawl_memory_default")]
-    pub max_crawl_memory: u32,
+    pub max_crawl_memory: u64,
     #[serde(default)]
     pub all_files: bool,
 }
@@ -86,6 +129,8 @@ pub struct Crawl {
 pub struct PostgresML {
     pub database_url: Option<String>,
     pub crawl: Option<Crawl>,
+    #[serde(default)]
+    pub splitter: ValidSplitter,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]

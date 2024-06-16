@@ -6,17 +6,50 @@ use ropey::Rope;
 use serde_json::Value;
 use std::collections::HashMap;
 use tracing::{error, instrument};
+use tree_sitter::{InputEdit, Point, Tree};
 
 use crate::{
     config::{self, Config},
     crawl::Crawl,
-    utils::tokens_to_estimated_characters,
+    utils::{parse_tree, tokens_to_estimated_characters},
 };
 
 use super::{ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType};
 
+#[derive(Default)]
+pub struct AdditionalFileStoreParams {
+    build_tree: bool,
+}
+
+impl AdditionalFileStoreParams {
+    pub fn new(build_tree: bool) -> Self {
+        Self { build_tree }
+    }
+}
+
+#[derive(Clone)]
+pub struct File {
+    rope: Rope,
+    tree: Option<Tree>,
+}
+
+impl File {
+    fn new(rope: Rope, tree: Option<Tree>) -> Self {
+        Self { rope, tree }
+    }
+
+    pub fn rope(&self) -> &Rope {
+        &self.rope
+    }
+
+    pub fn tree(&self) -> Option<&Tree> {
+        self.tree.as_ref()
+    }
+}
+
 pub struct FileStore {
-    file_map: Mutex<HashMap<String, Rope>>,
+    params: AdditionalFileStoreParams,
+    file_map: Mutex<HashMap<String, File>>,
     accessed_files: Mutex<IndexSet<String>>,
     crawl: Option<Mutex<Crawl>>,
 }
@@ -28,29 +61,72 @@ impl FileStore {
             .take()
             .map(|x| Mutex::new(Crawl::new(x, config.clone())));
         let s = Self {
+            params: AdditionalFileStoreParams::default(),
             file_map: Mutex::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
             crawl,
         };
         if let Err(e) = s.maybe_do_crawl(None) {
-            error!("{e}")
+            error!("{e:?}")
         }
         Ok(s)
     }
 
+    pub fn new_with_params(
+        mut file_store_config: config::FileStore,
+        config: Config,
+        params: AdditionalFileStoreParams,
+    ) -> anyhow::Result<Self> {
+        let crawl = file_store_config
+            .crawl
+            .take()
+            .map(|x| Mutex::new(Crawl::new(x, config.clone())));
+        let s = Self {
+            params,
+            file_map: Mutex::new(HashMap::new()),
+            accessed_files: Mutex::new(IndexSet::new()),
+            crawl,
+        };
+        if let Err(e) = s.maybe_do_crawl(None) {
+            error!("{e:?}")
+        }
+        Ok(s)
+    }
+
+    fn add_new_file(&self, uri: &str, contents: String) {
+        let tree = if self.params.build_tree {
+            match parse_tree(uri, &contents, None) {
+                Ok(tree) => Some(tree),
+                Err(e) => {
+                    error!(
+                        "Failed to parse tree for {uri} with error {e}, falling back to no tree"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        self.file_map
+            .lock()
+            .insert(uri.to_string(), File::new(Rope::from_str(&contents), tree));
+        self.accessed_files.lock().insert(uri.to_string());
+    }
+
     fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
         if let Some(crawl) = &self.crawl {
-            crawl.lock().maybe_do_crawl(triggered_file, |path| {
-                let insert_uri = format!("file://{path}");
-                if self.file_map.lock().contains_key(&insert_uri) {
-                    return Ok(());
-                }
-                let contents = std::fs::read_to_string(path)?;
-                self.file_map
-                    .lock()
-                    .insert(insert_uri, Rope::from_str(&contents));
-                Ok(())
-            })?;
+            crawl
+                .lock()
+                .maybe_do_crawl(triggered_file, |config, path| {
+                    let insert_uri = format!("file://{path}");
+                    if self.file_map.lock().contains_key(&insert_uri) {
+                        return Ok(());
+                    }
+                    // TODO: actually limit files based on config
+                    let contents = std::fs::read_to_string(path)?;
+                    self.add_new_file(&insert_uri, contents);
+                    Ok(())
+                })?;
         }
         Ok(())
     }
@@ -67,6 +143,7 @@ impl FileStore {
             .lock()
             .get(&current_document_uri)
             .context("Error file not found")?
+            .rope
             .clone();
         let mut cursor_index = rope.line_to_char(position.position.line as usize)
             + position.position.character as usize;
@@ -82,7 +159,7 @@ impl FileStore {
                 break;
             }
             let file_map = self.file_map.lock();
-            let r = file_map.get(file).context("Error file not found")?;
+            let r = &file_map.get(file).context("Error file not found")?.rope;
             let slice_max = needed.min(r.len_chars() + 1);
             let rope_str_slice = r
                 .get_slice(0..slice_max - 1)
@@ -105,6 +182,7 @@ impl FileStore {
             .lock()
             .get(position.text_document.uri.as_str())
             .context("Error file not found")?
+            .rope
             .clone();
         let cursor_index = rope.line_to_char(position.position.line as usize)
             + position.position.character as usize;
@@ -173,8 +251,8 @@ impl FileStore {
         })
     }
 
-    pub fn get_file_contents(&self, uri: &str) -> Option<String> {
-        self.file_map.lock().get(uri).clone().map(|x| x.to_string())
+    pub fn file_map(&self) -> &Mutex<HashMap<String, File>> {
+        &self.file_map
     }
 
     pub fn contains_file(&self, uri: &str) -> bool {
@@ -191,6 +269,7 @@ impl MemoryBackend for FileStore {
             .lock()
             .get(position.text_document.uri.as_str())
             .context("Error file not found")?
+            .rope
             .clone();
         let line = rope
             .get_line(position.position.line as usize)
@@ -217,12 +296,10 @@ impl MemoryBackend for FileStore {
         &self,
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
-        let rope = Rope::from_str(&params.text_document.text);
         let uri = params.text_document.uri.to_string();
-        self.file_map.lock().insert(uri.clone(), rope);
-        self.accessed_files.lock().shift_insert(0, uri.clone());
+        self.add_new_file(&uri, params.text_document.text);
         if let Err(e) = self.maybe_do_crawl(Some(uri)) {
-            error!("{e}")
+            error!("{e:?}")
         }
         Ok(())
     }
@@ -234,20 +311,95 @@ impl MemoryBackend for FileStore {
     ) -> anyhow::Result<()> {
         let uri = params.text_document.uri.to_string();
         let mut file_map = self.file_map.lock();
-        let rope = file_map
+        let file = file_map
             .get_mut(&uri)
-            .context("Error trying to get file that does not exist")?;
+            .with_context(|| format!("Trying to get file that does not exist {uri}"))?;
         for change in params.content_changes {
             // If range is ommitted, text is the new text of the document
             if let Some(range) = change.range {
-                let start_index =
-                    rope.line_to_char(range.start.line as usize) + range.start.character as usize;
+                // Record old positions
+                let (old_end_position, old_end_byte) = {
+                    let last_line_index = file.rope.len_lines() - 1;
+                    (
+                        file.rope
+                            .get_line(last_line_index)
+                            .context("getting last line for edit")
+                            .map(|last_line| Point::new(last_line_index, last_line.len_chars())),
+                        file.rope.bytes().count(),
+                    )
+                };
+                // Update the document
+                let start_index = file.rope.line_to_char(range.start.line as usize)
+                    + range.start.character as usize;
                 let end_index =
-                    rope.line_to_char(range.end.line as usize) + range.end.character as usize;
-                rope.remove(start_index..end_index);
-                rope.insert(start_index, &change.text);
+                    file.rope.line_to_char(range.end.line as usize) + range.end.character as usize;
+                file.rope.remove(start_index..end_index);
+                file.rope.insert(start_index, &change.text);
+                // Set new end positions
+                let (new_end_position, new_end_byte) = {
+                    let last_line_index = file.rope.len_lines() - 1;
+                    (
+                        file.rope
+                            .get_line(last_line_index)
+                            .context("getting last line for edit")
+                            .map(|last_line| Point::new(last_line_index, last_line.len_chars())),
+                        file.rope.bytes().count(),
+                    )
+                };
+                // Update the tree
+                if self.params.build_tree {
+                    let mut old_tree = file.tree.take();
+                    let start_byte = file
+                        .rope
+                        .try_line_to_char(range.start.line as usize)
+                        .and_then(|start_char| {
+                            file.rope
+                                .try_char_to_byte(start_char + range.start.character as usize)
+                        })
+                        .map_err(anyhow::Error::msg);
+                    if let Some(old_tree) = &mut old_tree {
+                        match (start_byte, old_end_position, new_end_position) {
+                            (Ok(start_byte), Ok(old_end_position), Ok(new_end_position)) => {
+                                old_tree.edit(&InputEdit {
+                                    start_byte,
+                                    old_end_byte,
+                                    new_end_byte,
+                                    start_position: Point::new(
+                                        range.start.line as usize,
+                                        range.start.character as usize,
+                                    ),
+                                    old_end_position,
+                                    new_end_position,
+                                });
+                                file.tree = match parse_tree(
+                                    &uri,
+                                    &file.rope.to_string(),
+                                    Some(old_tree),
+                                ) {
+                                    Ok(tree) => Some(tree),
+                                    Err(e) => {
+                                        error!("failed to edit tree: {e:?}");
+                                        None
+                                    }
+                                };
+                            }
+                            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+                                error!("failed to build tree edit: {e:?}");
+                            }
+                        }
+                    }
+                }
             } else {
-                *rope = Rope::from_str(&change.text);
+                file.rope = Rope::from_str(&change.text);
+                if self.params.build_tree {
+                    file.tree = match parse_tree(&uri, &change.text, None) {
+                        Ok(tree) => Some(tree),
+                        Err(e) => {
+                            error!("failed to parse new tree: {e:?}");
+                            None
+                        }
+                    };
+                }
             }
         }
         self.accessed_files.lock().shift_insert(0, uri);
@@ -299,8 +451,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn can_open_document() -> anyhow::Result<()> {
+    #[test]
+    fn can_open_document() -> anyhow::Result<()> {
         let params = lsp_types::DidOpenTextDocumentParams {
             text_document: generate_filler_text_document(None, None),
         };
@@ -312,12 +464,12 @@ mod tests {
             .get("file://filler/")
             .unwrap()
             .clone();
-        assert_eq!(file.to_string(), "Here is the document body");
+        assert_eq!(file.rope.to_string(), "Here is the document body");
         Ok(())
     }
 
-    #[tokio::test]
-    async fn can_rename_document() -> anyhow::Result<()> {
+    #[test]
+    fn can_rename_document() -> anyhow::Result<()> {
         let params = lsp_types::DidOpenTextDocumentParams {
             text_document: generate_filler_text_document(None, None),
         };
@@ -338,12 +490,12 @@ mod tests {
             .get("file://filler2/")
             .unwrap()
             .clone();
-        assert_eq!(file.to_string(), "Here is the document body");
+        assert_eq!(file.rope.to_string(), "Here is the document body");
         Ok(())
     }
 
-    #[tokio::test]
-    async fn can_change_document() -> anyhow::Result<()> {
+    #[test]
+    fn can_change_document() -> anyhow::Result<()> {
         let text_document = generate_filler_text_document(None, None);
 
         let params = DidOpenTextDocumentParams {
@@ -379,7 +531,7 @@ mod tests {
             .get("file://filler/")
             .unwrap()
             .clone();
-        assert_eq!(file.to_string(), "Hae is the document body");
+        assert_eq!(file.rope.to_string(), "Hae is the document body");
 
         let params = lsp_types::DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
@@ -399,7 +551,7 @@ mod tests {
             .get("file://filler/")
             .unwrap()
             .clone();
-        assert_eq!(file.to_string(), "abc");
+        assert_eq!(file.rope.to_string(), "abc");
 
         Ok(())
     }
@@ -579,43 +731,123 @@ The end with a trailing new line
         Ok(())
     }
 
-    //     #[tokio::test]
-    //     async fn test_fim_placement_corner_cases() -> anyhow::Result<()> {
-    //         let text_document = generate_filler_text_document(None, Some("test\n"));
-    //         let params = lsp_types::DidOpenTextDocumentParams {
-    //             text_document: text_document.clone(),
-    //         };
-    //         let file_store = generate_base_file_store()?;
-    //         file_store.opened_text_document(params).await?;
+    #[test]
+    fn test_file_store_tree_sitter() -> anyhow::Result<()> {
+        crate::init_logger();
 
-    //         // Test FIM
-    //         let params = json!({
-    //             "fim": {
-    //                 "start": "SS",
-    //                 "middle": "MM",
-    //                 "end": "EE"
-    //             }
-    //         });
-    //         let prompt = file_store
-    //             .build_prompt(
-    //                 &TextDocumentPositionParams {
-    //                     text_document: TextDocumentIdentifier {
-    //                         uri: text_document.uri.clone(),
-    //                     },
-    //                     position: Position {
-    //                         line: 1,
-    //                         character: 0,
-    //                     },
-    //                 },
-    //                 params,
-    //             )
-    //             .await?;
-    //         assert_eq!(prompt.context, "");
-    //         let text = r#"test
-    // "#
-    //         .to_string();
-    //         assert_eq!(text, prompt.code);
+        let config = Config::default_with_file_store_without_models();
+        let file_store_config = if let config::ValidMemoryBackend::FileStore(file_store_config) =
+            config.config.memory.clone()
+        {
+            file_store_config
+        } else {
+            anyhow::bail!("requires a file_store_config")
+        };
+        let params = AdditionalFileStoreParams { build_tree: true };
+        let file_store = FileStore::new_with_params(file_store_config, config, params)?;
 
-    //         Ok(())
-    //     }
+        let uri = "file://filler/test.rs";
+        let text = r#"#[derive(Debug)]
+struct Rectangle {
+    width: u32,
+    height: u32,
+}
+
+impl Rectangle {
+    fn area(&self) -> u32 {
+
+    }
+}
+
+fn main() {
+    let rect1 = Rectangle {
+        width: 30,
+        height: 50,
+    };
+
+    println!(
+        "The area of the rectangle is {} square pixels.",
+        rect1.area()
+    );
+}"#;
+        let text_document = TextDocumentItem {
+            uri: reqwest::Url::parse(uri).unwrap(),
+            language_id: "".to_string(),
+            version: 0,
+            text: text.to_string(),
+        };
+        let params = DidOpenTextDocumentParams {
+            text_document: text_document.clone(),
+        };
+
+        file_store.opened_text_document(params)?;
+
+        // Test insert
+        let params = lsp_types::DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: text_document.uri.clone(),
+                version: 1,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 8,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 8,
+                        character: 0,
+                    },
+                }),
+                range_length: None,
+                text: "        self.width * self.height".to_string(),
+            }],
+        };
+        file_store.changed_text_document(params)?;
+        let file = file_store.file_map.lock().get(uri).unwrap().clone();
+        assert_eq!(file.tree.unwrap().root_node().to_sexp(), "(source_file (attribute_item (attribute (identifier) arguments: (token_tree (identifier)))) (struct_item name: (type_identifier) body: (field_declaration_list (field_declaration name: (field_identifier) type: (primitive_type)) (field_declaration name: (field_identifier) type: (primitive_type)))) (impl_item type: (type_identifier) body: (declaration_list (function_item name: (identifier) parameters: (parameters (self_parameter (self))) return_type: (primitive_type) body: (block (binary_expression left: (field_expression value: (self) field: (field_identifier)) right: (field_expression value: (self) field: (field_identifier))))))) (function_item name: (identifier) parameters: (parameters) body: (block (let_declaration pattern: (identifier) value: (struct_expression name: (type_identifier) body: (field_initializer_list (field_initializer field: (field_identifier) value: (integer_literal)) (field_initializer field: (field_identifier) value: (integer_literal))))) (expression_statement (macro_invocation macro: (identifier) (token_tree (string_literal (string_content)) (identifier) (identifier) (token_tree)))))))");
+
+        // Test delete
+        let params = lsp_types::DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: text_document.uri.clone(),
+                version: 1,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 12,
+                        character: 0,
+                    },
+                }),
+                range_length: None,
+                text: "".to_string(),
+            }],
+        };
+        file_store.changed_text_document(params)?;
+        let file = file_store.file_map.lock().get(uri).unwrap().clone();
+        assert_eq!(file.tree.unwrap().root_node().to_sexp(), "(source_file (function_item name: (identifier) parameters: (parameters) body: (block (let_declaration pattern: (identifier) value: (struct_expression name: (type_identifier) body: (field_initializer_list (field_initializer field: (field_identifier) value: (integer_literal)) (field_initializer field: (field_identifier) value: (integer_literal))))) (expression_statement (macro_invocation macro: (identifier) (token_tree (string_literal (string_content)) (identifier) (identifier) (token_tree)))))))");
+
+        // Test replace
+        let params = lsp_types::DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: text_document.uri,
+                version: 1,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: "fn main() {}".to_string(),
+            }],
+        };
+        file_store.changed_text_document(params)?;
+        let file = file_store.file_map.lock().get(uri).unwrap().clone();
+        assert_eq!(file.tree.unwrap().root_node().to_sexp(), "(source_file (function_item name: (identifier) parameters: (parameters) body: (block)))");
+
+        Ok(())
+    }
 }
