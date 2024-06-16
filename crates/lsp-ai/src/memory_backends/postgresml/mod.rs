@@ -251,29 +251,31 @@ impl PostgresML {
             crawl
                 .lock()
                 .maybe_do_crawl(triggered_file, |config, path| {
-                    let uri = format!("file://{path}");
+                    // Break if total bytes is over the max crawl memory
+                    if total_bytes as u64 >= config.max_crawl_memory {
+                        warn!("Ending crawl early due to `max_crawl_memory` resetraint");
+                        return Ok(false);
+                    }
                     // This means it has been opened before
+                    let uri = format!("file://{path}");
                     if self.file_store.contains_file(&uri) {
-                        return Ok(());
+                        return Ok(true);
                     }
                     // Open the file and see if it is small enough to read
                     let mut f = std::fs::File::open(path)?;
-                    if f.metadata()
-                        .map(|m| m.len() > config.max_file_size)
-                        .unwrap_or(true)
-                    {
-                        warn!("Skipping file because it is too large: {path}");
-                        return Ok(());
+                    let metadata = f.metadata()?;
+                    if metadata.len() > config.max_file_size {
+                        warn!("Skipping file: {path} because it is too large");
+                        return Ok(true);
                     }
                     // Read the file contents
                     let mut contents = vec![];
-                    f.read_to_end(&mut contents);
-                    if let Ok(contents) = String::from_utf8(contents) {
-                        current_bytes += contents.len();
-                        total_bytes += contents.len();
-                        let chunks = self.splitter.split_file_contents(&uri, &contents);
-                        documents.push((uri, chunks));
-                    }
+                    f.read_to_end(&mut contents)?;
+                    let contents = String::from_utf8(contents)?;
+                    current_bytes += contents.len();
+                    total_bytes += contents.len();
+                    let chunks = self.splitter.split_file_contents(&uri, &contents);
+                    documents.push((uri, chunks));
                     // If we have over 100 mega bytes of data do the upsert
                     if current_bytes >= 100_000_000 || total_bytes as u64 >= config.max_crawl_memory
                     {
@@ -305,12 +307,7 @@ impl PostgresML {
                         current_bytes = 0;
                         documents = vec![];
                     }
-                    // Break if total bytes is over the max crawl memory
-                    if total_bytes as u64 >= config.max_crawl_memory {
-                        warn!("Ending crawl eraly do to max_crawl_memory");
-                        return Ok(());
-                    }
-                    Ok(())
+                    Ok(true)
                 })?;
         }
         Ok(())

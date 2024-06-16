@@ -41,7 +41,7 @@ impl Splitter for TreeSitter {
                 Ok(chunks) => chunks,
                 Err(e) => {
                     error!(
-                        "Failed to parse tree for file with error {e:?}. Falling back to default splitter.",
+                        "Failed to parse tree for file with error: {e:?}. Falling back to default splitter.",
                     );
                     todo!()
                 }
@@ -57,14 +57,14 @@ impl Splitter for TreeSitter {
                 Ok(chunks) => chunks,
                 Err(e) => {
                     error!(
-                            "Failed to parse tree for file: {uri} with error {e:?}. Falling back to default splitter.",
+                            "Failed to parse tree for file: {uri} with error: {e:?}. Falling back to default splitter.",
                         );
                     todo!()
                 }
             },
             Err(e) => {
                 error!(
-                    "Failed to parse tree for file {uri} with error {e:?}. Falling back to default splitter.",
+                    "Failed to parse tree for file {uri} with error: {e:?}. Falling back to default splitter.",
                 );
                 todo!()
             }
