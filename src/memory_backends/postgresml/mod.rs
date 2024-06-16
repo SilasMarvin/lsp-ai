@@ -1,29 +1,64 @@
+use anyhow::Context;
+use lsp_types::TextDocumentPositionParams;
+use parking_lot::Mutex;
+use pgml::{Collection, Pipeline};
+use serde_json::{json, Value};
 use std::{
+    io::Read,
     sync::{
         mpsc::{self, Sender},
         Arc,
     },
     time::Duration,
 };
-
-use anyhow::Context;
-use lsp_types::TextDocumentPositionParams;
-use parking_lot::Mutex;
-use pgml::{Collection, Pipeline};
-use serde_json::{json, Value};
 use tokio::time;
-use tracing::{error, instrument};
+use tracing::{error, instrument, warn};
 
 use crate::{
     config::{self, Config},
     crawl::Crawl,
-    utils::{tokens_to_estimated_characters, TOKIO_RUNTIME},
+    splitters::{Chunk, Splitter},
+    utils::{chunk_to_id, tokens_to_estimated_characters, TOKIO_RUNTIME},
 };
 
 use super::{
-    file_store::FileStore, ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt,
-    PromptType,
+    file_store::{AdditionalFileStoreParams, FileStore},
+    ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType,
 };
+
+fn chunk_to_document(uri: &str, chunk: Chunk) -> Value {
+    json!({
+        "id": chunk_to_id(uri, &chunk),
+        "uri": uri,
+        "text": chunk.text,
+        "range": chunk.range
+    })
+}
+
+async fn split_and_upsert_file(
+    uri: &str,
+    collection: &mut Collection,
+    file_store: Arc<FileStore>,
+    splitter: Arc<Box<dyn Splitter + Send + Sync>>,
+) -> anyhow::Result<()> {
+    // We need to make sure we don't hold the file_store lock while performing a network call
+    let chunks = {
+        file_store
+            .file_map()
+            .lock()
+            .get(uri)
+            .map(|f| splitter.split(f))
+    };
+    let chunks = chunks.with_context(|| format!("file not found for splitting: {uri}"))?;
+    let documents = chunks
+        .into_iter()
+        .map(|chunk| chunk_to_document(uri, chunk).into())
+        .collect();
+    collection
+        .upsert_documents(documents, None)
+        .await
+        .context("PGML - Error upserting documents")
+}
 
 #[derive(Clone)]
 pub struct PostgresML {
@@ -33,6 +68,7 @@ pub struct PostgresML {
     pipeline: Pipeline,
     debounce_tx: Sender<String>,
     crawl: Option<Arc<Mutex<Crawl>>>,
+    splitter: Arc<Box<dyn Splitter + Send + Sync>>,
 }
 
 impl PostgresML {
@@ -45,10 +81,16 @@ impl PostgresML {
             .crawl
             .take()
             .map(|x| Arc::new(Mutex::new(Crawl::new(x, configuration.clone()))));
-        let file_store = Arc::new(FileStore::new(
+
+        let splitter: Arc<Box<dyn Splitter + Send + Sync>> =
+            Arc::new(postgresml_config.splitter.try_into()?);
+
+        let file_store = Arc::new(FileStore::new_with_params(
             config::FileStore::new_without_crawl(),
             configuration.clone(),
+            AdditionalFileStoreParams::new(splitter.does_use_tree_sitter()),
         )?);
+
         let database_url = if let Some(database_url) = postgresml_config.database_url {
             database_url
         } else {
@@ -86,6 +128,7 @@ impl PostgresML {
         let (debounce_tx, debounce_rx) = mpsc::channel::<String>();
         let mut task_collection = collection.clone();
         let task_file_store = file_store.clone();
+        let task_splitter = splitter.clone();
         TOKIO_RUNTIME.spawn(async move {
             let duration = Duration::from_millis(500);
             let mut file_uris = Vec::new();
@@ -102,36 +145,83 @@ impl PostgresML {
                     if file_uris.is_empty() {
                         continue;
                     }
-                    let documents = match file_uris
+
+                    // Build the chunks for our changed files
+                    let chunks: Vec<Vec<Chunk>> = match file_uris
                         .iter()
                         .map(|uri| {
-                            let text = task_file_store
-                                .get_file_contents(&uri)
-                                .context("Error reading file contents from file_store")?;
-                            anyhow::Ok(
-                                json!({
-                                    "id": uri,
-                                    "text": text
-                                })
-                                .into(),
-                            )
+                            let file_store = task_file_store.file_map().lock();
+                            let file = file_store
+                                .get(uri)
+                                .with_context(|| format!("getting file for splitting: {uri}"))?;
+                            anyhow::Ok(task_splitter.split(file))
                         })
                         .collect()
                     {
-                        Ok(documents) => documents,
+                        Ok(chunks) => chunks,
                         Err(e) => {
                             error!("{e}");
                             continue;
                         }
                     };
+
+                    // Delete old chunks that no longer exist after the latest file changes
+                    let delete_or_statements: Vec<Value> = file_uris
+                        .iter()
+                        .zip(&chunks)
+                        .map(|(uri, chunks)| {
+                            let ids: Vec<String> =
+                                chunks.iter().map(|c| chunk_to_id(uri, c)).collect();
+                            json!({
+                                "$and": [
+                                    {
+                                        "uri": {
+                                            "$eq": uri
+                                        }
+                                    },
+                                    {
+                                        "id": {
+                                            "$nin": ids
+                                        }
+                                    }
+                                ]
+                            })
+                        })
+                        .collect();
+                    if let Err(e) = task_collection
+                        .delete_documents(
+                            json!({
+                                "$or": delete_or_statements
+                            })
+                            .into(),
+                        )
+                        .await
+                    {
+                        error!("PGML - Error deleting file: {e:?}");
+                    }
+
+                    // Prepare and upsert our new chunks
+                    let documents: Vec<pgml::types::Json> = chunks
+                        .into_iter()
+                        .zip(&file_uris)
+                        .map(|(chunks, uri)| {
+                            chunks
+                                .into_iter()
+                                .map(|chunk| chunk_to_document(&uri, chunk))
+                                .collect::<Vec<Value>>()
+                        })
+                        .flatten()
+                        .map(|f: Value| f.into())
+                        .collect();
                     if let Err(e) = task_collection
                         .upsert_documents(documents, None)
                         .await
-                        .context("PGML - Error adding pipeline to collection")
+                        .context("PGML - Error upserting changed files")
                     {
                         error!("{e}");
                         continue;
                     }
+
                     file_uris = Vec::new();
                 }
             }
@@ -144,6 +234,7 @@ impl PostgresML {
             pipeline,
             debounce_tx,
             crawl,
+            splitter,
         };
 
         if let Err(e) = s.maybe_do_crawl(None) {
@@ -154,28 +245,73 @@ impl PostgresML {
 
     fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
         if let Some(crawl) = &self.crawl {
-            let mut _collection = self.collection.clone();
-            let mut _pipeline = self.pipeline.clone();
-            let mut documents: Vec<pgml::types::Json> = vec![];
-            crawl.lock().maybe_do_crawl(triggered_file, |path| {
-                let uri = format!("file://{path}");
-                // This means it has been opened before
-                if self.file_store.contains_file(&uri) {
-                    return Ok(());
-                }
-                // Get the contents, split, and upsert it
-                let contents = std::fs::read_to_string(path)?;
-                documents.push(
-                    json!({
-                        "id": uri,
-                        "text": contents
-                    })
-                    .into(),
-                );
-                // Track the size of the documents we have
-                // If it is over some amount in bytes, upsert it
-                Ok(())
-            })?;
+            let mut documents: Vec<(String, Vec<Chunk>)> = vec![];
+            let mut total_bytes = 0;
+            let mut current_bytes = 0;
+            crawl
+                .lock()
+                .maybe_do_crawl(triggered_file, |config, path| {
+                    let uri = format!("file://{path}");
+                    // This means it has been opened before
+                    if self.file_store.contains_file(&uri) {
+                        return Ok(());
+                    }
+                    // Open the file and see if it is small enough to read
+                    let mut f = std::fs::File::open(path)?;
+                    if f.metadata()
+                        .map(|m| m.len() > config.max_file_size)
+                        .unwrap_or(true)
+                    {
+                        warn!("Skipping file because it is too large: {path}");
+                        return Ok(());
+                    }
+                    // Read the file contents
+                    let mut contents = vec![];
+                    f.read_to_end(&mut contents);
+                    if let Ok(contents) = String::from_utf8(contents) {
+                        current_bytes += contents.len();
+                        total_bytes += contents.len();
+                        let chunks = self.splitter.split_file_contents(&uri, &contents);
+                        documents.push((uri, chunks));
+                    }
+                    // If we have over 100 mega bytes of data do the upsert
+                    if current_bytes >= 100_000_000 || total_bytes as u64 >= config.max_crawl_memory
+                    {
+                        // Prepare our chunks
+                        let to_upsert_documents: Vec<pgml::types::Json> =
+                            std::mem::take(&mut documents)
+                                .into_iter()
+                                .map(|(uri, chunks)| {
+                                    chunks
+                                        .into_iter()
+                                        .map(|chunk| chunk_to_document(&uri, chunk))
+                                        .collect::<Vec<Value>>()
+                                })
+                                .flatten()
+                                .map(|f: Value| f.into())
+                                .collect();
+                        // Do the upsert
+                        let mut collection = self.collection.clone();
+                        TOKIO_RUNTIME.spawn(async move {
+                            if let Err(e) = collection
+                                .upsert_documents(to_upsert_documents, None)
+                                .await
+                                .context("PGML - Error upserting changed files")
+                            {
+                                error!("{e}");
+                            }
+                        });
+                        // Reset everything
+                        current_bytes = 0;
+                        documents = vec![];
+                    }
+                    // Break if total bytes is over the max crawl memory
+                    if total_bytes as u64 >= config.max_crawl_memory {
+                        warn!("Ending crawl eraly do to max_crawl_memory");
+                        return Ok(());
+                    }
+                    Ok(())
+                })?;
         }
         Ok(())
     }
@@ -263,25 +399,22 @@ impl MemoryBackend for PostgresML {
         params: lsp_types::DidOpenTextDocumentParams,
     ) -> anyhow::Result<()> {
         self.file_store.opened_text_document(params.clone())?;
-        let mut task_collection = self.collection.clone();
+
         let saved_uri = params.text_document.uri.to_string();
+
+        let mut collection = self.collection.clone();
+        let file_store = self.file_store.clone();
+        let splitter = self.splitter.clone();
         TOKIO_RUNTIME.spawn(async move {
-            let text = params.text_document.text.clone();
             let uri = params.text_document.uri.to_string();
-            task_collection
-                .upsert_documents(
-                    vec![json!({
-                        "id": uri,
-                        "text": text
-                    })
-                    .into()],
-                    None,
-                )
-                .await
-                .expect("PGML - Error upserting documents");
+            if let Err(e) = split_and_upsert_file(&uri, &mut collection, file_store, splitter).await
+            {
+                error!("{e:?}")
+            }
         });
+
         if let Err(e) = self.maybe_do_crawl(Some(saved_uri)) {
-            error!("{e}")
+            error!("{e:?}")
         }
         Ok(())
     }
@@ -300,32 +433,35 @@ impl MemoryBackend for PostgresML {
     #[instrument(skip(self))]
     fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         self.file_store.renamed_files(params.clone())?;
-        let mut task_collection = self.collection.clone();
-        let task_params = params.clone();
+
+        let mut collection = self.collection.clone();
+        let file_store = self.file_store.clone();
+        let splitter = self.splitter.clone();
         TOKIO_RUNTIME.spawn(async move {
-            for file in task_params.files {
-                task_collection
+            for file in params.files {
+                if let Err(e) = collection
                     .delete_documents(
                         json!({
-                            "id": file.old_uri
+                            "uri": {
+                                "$eq": file.old_uri
+                            }
                         })
                         .into(),
                     )
                     .await
-                    .expect("PGML - Error deleting file");
-                let text =
-                    std::fs::read_to_string(&file.new_uri).expect("PGML - Error reading file");
-                task_collection
-                    .upsert_documents(
-                        vec![json!({
-                            "id": file.new_uri,
-                            "text": text
-                        })
-                        .into()],
-                        None,
-                    )
-                    .await
-                    .expect("PGML - Error adding pipeline to collection");
+                {
+                    error!("PGML - Error deleting file: {e:?}");
+                }
+                if let Err(e) = split_and_upsert_file(
+                    &file.new_uri,
+                    &mut collection,
+                    file_store.clone(),
+                    splitter.clone(),
+                )
+                .await
+                {
+                    error!("{e:?}")
+                }
             }
         });
         Ok(())

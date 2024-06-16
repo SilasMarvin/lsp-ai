@@ -18,6 +18,7 @@ mod crawl;
 mod custom_requests;
 mod memory_backends;
 mod memory_worker;
+mod splitters;
 #[cfg(feature = "llama_cpp")]
 mod template;
 mod transformer_backends;
@@ -51,15 +52,19 @@ where
     req.extract(R::METHOD)
 }
 
-fn main() -> Result<()> {
-    // Builds a tracing subscriber from the `LSP_AI_LOG` environment variable
-    // If the variables value is malformed or missing, sets the default log level to ERROR
+// Builds a tracing subscriber from the `LSP_AI_LOG` environment variable
+// If the variables value is malformed or missing, sets the default log level to ERROR
+fn init_logger() {
     FmtSubscriber::builder()
         .with_writer(std::io::stderr)
         .with_ansi(false)
         .without_time()
         .with_env_filter(EnvFilter::from_env("LSP_AI_LOG"))
         .init();
+}
+
+fn main() -> Result<()> {
+    init_logger();
 
     let (connection, io_threads) = Connection::stdio();
     let server_capabilities = serde_json::to_value(ServerCapabilities {
