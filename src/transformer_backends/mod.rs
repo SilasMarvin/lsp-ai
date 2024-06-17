@@ -11,6 +11,7 @@ use crate::{
 };
 
 mod anthropic;
+mod gemini;
 #[cfg(feature = "llama_cpp")]
 mod llama_cpp;
 mod mistral_fim;
@@ -66,6 +67,7 @@ impl TryFrom<ValidModel> for Box<dyn TransformerBackend + Send + Sync> {
             ValidModel::OpenAI(open_ai_config) => {
                 Ok(Box::new(open_ai::OpenAI::new(open_ai_config)))
             }
+            ValidModel::Gemini(gemini_config) => Ok(Box::new(gemini::Gemini::new(gemini_config))),
             ValidModel::Anthropic(anthropic_config) => {
                 Ok(Box::new(anthropic::Anthropic::new(anthropic_config)))
             }

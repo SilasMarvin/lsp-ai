@@ -46,6 +46,8 @@ pub enum ValidModel {
     MistralFIM(MistralFIM),
     #[serde(rename = "ollama")]
     Ollama(Ollama),
+    #[serde(rename = "gemini")]
+    Gemini(Gemini),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -173,6 +175,24 @@ pub struct OpenAI {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Gemini {
+    // The auth token env var name
+    pub auth_token_env_var_name: Option<String>,
+    // The auth token
+    pub auth_token: Option<String>,
+    // The completions endpoint
+    pub completions_endpoint: Option<String>,
+    // The chat endpoint
+    pub chat_endpoint: Option<String>,
+    // The maximum requests per second
+    #[serde(default = "max_requests_per_second_default")]
+    pub max_requests_per_second: f32,
+    // The model name
+    pub model: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Anthropic {
     // The auth token env var name
     pub auth_token_env_var_name: Option<String>,
@@ -272,6 +292,7 @@ impl Config {
             #[cfg(feature = "llama_cpp")]
             ValidModel::LLaMACPP(llama_cpp) => Ok(llama_cpp.max_requests_per_second),
             ValidModel::OpenAI(open_ai) => Ok(open_ai.max_requests_per_second),
+            ValidModel::Gemini(gemini) => Ok(gemini.max_requests_per_second),
             ValidModel::Anthropic(anthropic) => Ok(anthropic.max_requests_per_second),
             ValidModel::MistralFIM(mistral_fim) => Ok(mistral_fim.max_requests_per_second),
             ValidModel::Ollama(ollama) => Ok(ollama.max_requests_per_second),
@@ -377,6 +398,41 @@ mod test {
                 "models": {
                     "model1": {
                         "type": "open_ai",
+                        "completions_endpoint": "https://api.fireworks.ai/inference/v1/completions",
+                        "model": "accounts/fireworks/models/llama-v2-34b-code",
+                        "auth_token_env_var_name": "FIREWORKS_API_KEY",
+                    },
+                },
+                "completion": {
+                    "model": "model1",
+                    "parameters": {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "Test",
+                            },
+                            {
+                                "role": "user",
+                                "content": "Test {CONTEXT} - {CODE}"
+                            }
+                        ],
+                        "max_new_tokens": 32,
+                    }
+                }
+            }
+        });
+        Config::new(args).unwrap();
+    }
+    #[test]
+    fn gemini_config() {
+        let args = json!({
+            "initializationOptions": {
+                "memory": {
+                    "file_store": {}
+                },
+                "models": {
+                    "model1": {
+                        "type": "gemini",
                         "completions_endpoint": "https://api.fireworks.ai/inference/v1/completions",
                         "model": "accounts/fireworks/models/llama-v2-34b-code",
                         "auth_token_env_var_name": "FIREWORKS_API_KEY",
