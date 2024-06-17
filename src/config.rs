@@ -433,9 +433,9 @@ mod test {
                 "models": {
                     "model1": {
                         "type": "gemini",
-                        "completions_endpoint": "https://api.fireworks.ai/inference/v1/completions",
-                        "model": "accounts/fireworks/models/llama-v2-34b-code",
-                        "auth_token_env_var_name": "FIREWORKS_API_KEY",
+                        "completions_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=",
+                        "model": "gemini-1.5-flash-latest",
+                        "auth_token_env_var_name": "GEMINI_API_KEY",
                     },
                 },
                 "completion": {
