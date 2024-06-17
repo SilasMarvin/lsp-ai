@@ -70,7 +70,7 @@ impl Gemini {
                 self.config
                     .completions_endpoint
                     .as_ref()
-                    .context("must specify `gemini_endpoint` to use gemini")?,
+                    .context("must specify `gemini_endpoint` to use gemini")?.to_owned() + token.as_ref(),
             )
             .header("Content-Type", "application/json")
             .json(&json!(
@@ -147,7 +147,7 @@ mod test {
     #[tokio::test]
     async fn gemini_completion_do_generate() -> anyhow::Result<()> {
         let configuration: config::Gemini = from_value(json!({
-            "completions_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=", // here fill the key
+            "completions_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=",
             "model": "gemini-1.5-flash-latest",
             "auth_token_env_var_name": "GEMINI_API_KEY",
         }))?;
