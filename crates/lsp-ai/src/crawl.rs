@@ -8,6 +8,7 @@ pub struct Crawl {
     crawl_config: config::Crawl,
     config: Config,
     crawled_file_types: HashSet<String>,
+    crawled_all: bool,
 }
 
 impl Crawl {
@@ -16,6 +17,7 @@ impl Crawl {
             crawl_config,
             config,
             crawled_file_types: HashSet::new(),
+            crawled_all: false,
         }
     }
 
@@ -25,6 +27,10 @@ impl Crawl {
         triggered_file: Option<String>,
         mut f: impl FnMut(&config::Crawl, &str) -> anyhow::Result<bool>,
     ) -> anyhow::Result<()> {
+        if self.crawled_all {
+            return Ok(());
+        }
+
         if let Some(root_uri) = &self.config.client_params.root_uri {
             if !root_uri.starts_with("file://") {
                 anyhow::bail!("Skipping crawling as root_uri does not begin with file://")
@@ -51,13 +57,14 @@ impl Crawl {
             for result in WalkBuilder::new(&root_uri[7..]).build() {
                 let result = result?;
                 let path = result.path();
+                eprintln!("CRAWLING: {}", path.display());
                 if !path.is_dir() {
                     if let Some(path_str) = path.to_str() {
                         if self.crawl_config.all_files {
                             match f(&self.crawl_config, path_str) {
                                 Ok(c) => {
                                     if !c {
-                                        return Ok(());
+                                        break;
                                     }
                                 }
                                 Err(e) => error!("{e:?}"),
@@ -72,7 +79,7 @@ impl Crawl {
                                         match f(&self.crawl_config, path_str) {
                                             Ok(c) => {
                                                 if !c {
-                                                    return Ok(());
+                                                    break;
                                                 }
                                             }
                                             Err(e) => error!("{e:?}"),
@@ -88,6 +95,8 @@ impl Crawl {
 
             if let Some(extension_to_match) = extension_to_match {
                 self.crawled_file_types.insert(extension_to_match);
+            } else {
+                self.crawled_all = true
             }
         }
         Ok(())

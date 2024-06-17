@@ -4,18 +4,19 @@ use tree_sitter::Tree;
 
 use crate::{config, memory_backends::file_store::File, utils::parse_tree};
 
-use super::{ByteRange, Chunk, Splitter};
+use super::{text_splitter::TextSplitter, ByteRange, Chunk, Splitter};
 
 pub struct TreeSitter {
-    _config: config::TreeSitter,
     splitter: TreeSitterCodeSplitter,
+    text_splitter: TextSplitter,
 }
 
 impl TreeSitter {
     pub fn new(config: config::TreeSitter) -> anyhow::Result<Self> {
+        let text_splitter = TextSplitter::new_with_chunk_size(config.chunk_size);
         Ok(Self {
             splitter: TreeSitterCodeSplitter::new(config.chunk_size, config.chunk_overlap)?,
-            _config: config,
+            text_splitter,
         })
     }
 
@@ -43,11 +44,11 @@ impl Splitter for TreeSitter {
                     error!(
                         "Failed to parse tree for file with error: {e:?}. Falling back to default splitter.",
                     );
-                    todo!()
+                    self.text_splitter.split(file)
                 }
             }
         } else {
-            panic!("TreeSitter splitter requires a tree to split")
+            self.text_splitter.split(file)
         }
     }
 
@@ -59,14 +60,14 @@ impl Splitter for TreeSitter {
                     error!(
                             "Failed to parse tree for file: {uri} with error: {e:?}. Falling back to default splitter.",
                         );
-                    todo!()
+                    self.text_splitter.split_file_contents(uri, contents)
                 }
             },
             Err(e) => {
                 error!(
                     "Failed to parse tree for file {uri} with error: {e:?}. Falling back to default splitter.",
                 );
-                todo!()
+                self.text_splitter.split_file_contents(uri, contents)
             }
         }
     }
