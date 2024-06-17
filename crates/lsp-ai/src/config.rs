@@ -13,6 +13,8 @@ const fn max_requests_per_second_default() -> f32 {
 pub enum ValidSplitter {
     #[serde(rename = "tree_sitter")]
     TreeSitter(TreeSitter),
+    #[serde(rename = "text_sitter")]
+    TextSplitter(TextSplitter),
 }
 
 impl Default for ValidSplitter {
@@ -44,6 +46,12 @@ impl Default for TreeSitter {
             chunk_overlap: 0,
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TextSplitter {
+    #[serde(default = "chunk_size_default")]
+    pub chunk_size: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -106,7 +114,7 @@ pub struct FIM {
 }
 
 const fn max_crawl_memory_default() -> u64 {
-    42
+    100_000_000
 }
 
 const fn max_crawl_file_size_default() -> u64 {

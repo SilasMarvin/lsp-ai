@@ -3182,7 +3182,6 @@ dependencies = [
  "regex",
  "strum",
  "thiserror",
- "tree-sitter",
  "unicode-segmentation",
 ]
 

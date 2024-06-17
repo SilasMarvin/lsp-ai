@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use crate::{config::ValidSplitter, memory_backends::file_store::File};
 
+mod text_splitter;
 mod tree_sitter;
 
 #[derive(Serialize)]
@@ -47,6 +48,9 @@ impl TryFrom<ValidSplitter> for Box<dyn Splitter + Send + Sync> {
         match value {
             ValidSplitter::TreeSitter(config) => {
                 Ok(Box::new(tree_sitter::TreeSitter::new(config)?))
+            }
+            ValidSplitter::TextSplitter(config) => {
+                Ok(Box::new(text_splitter::TextSplitter::new(config)))
             }
         }
     }

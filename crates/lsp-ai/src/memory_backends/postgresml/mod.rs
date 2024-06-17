@@ -245,7 +245,7 @@ impl PostgresML {
 
     fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
         if let Some(crawl) = &self.crawl {
-            let mut documents: Vec<(String, Vec<Chunk>)> = vec![];
+            let mut documents = vec![];
             let mut total_bytes = 0;
             let mut current_bytes = 0;
             crawl
@@ -253,7 +253,7 @@ impl PostgresML {
                 .maybe_do_crawl(triggered_file, |config, path| {
                     // Break if total bytes is over the max crawl memory
                     if total_bytes as u64 >= config.max_crawl_memory {
-                        warn!("Ending crawl early due to `max_crawl_memory` resetraint");
+                        warn!("Ending crawl early due to `max_crawl_memory` restraint");
                         return Ok(false);
                     }
                     // This means it has been opened before
@@ -274,26 +274,19 @@ impl PostgresML {
                     let contents = String::from_utf8(contents)?;
                     current_bytes += contents.len();
                     total_bytes += contents.len();
-                    let chunks = self.splitter.split_file_contents(&uri, &contents);
-                    documents.push((uri, chunks));
+                    let chunks: Vec<pgml::types::Json> = self
+                        .splitter
+                        .split_file_contents(&uri, &contents)
+                        .into_iter()
+                        .map(|chunk| chunk_to_document(&uri, chunk).into())
+                        .collect();
+                    documents.extend(chunks);
                     // If we have over 100 mega bytes of data do the upsert
                     if current_bytes >= 100_000_000 || total_bytes as u64 >= config.max_crawl_memory
                     {
-                        // Prepare our chunks
-                        let to_upsert_documents: Vec<pgml::types::Json> =
-                            std::mem::take(&mut documents)
-                                .into_iter()
-                                .map(|(uri, chunks)| {
-                                    chunks
-                                        .into_iter()
-                                        .map(|chunk| chunk_to_document(&uri, chunk))
-                                        .collect::<Vec<Value>>()
-                                })
-                                .flatten()
-                                .map(|f: Value| f.into())
-                                .collect();
-                        // Do the upsert
+                        // Upsert the documents
                         let mut collection = self.collection.clone();
+                        let to_upsert_documents = std::mem::take(&mut documents);
                         TOKIO_RUNTIME.spawn(async move {
                             if let Err(e) = collection
                                 .upsert_documents(to_upsert_documents, None)
@@ -309,6 +302,19 @@ impl PostgresML {
                     }
                     Ok(true)
                 })?;
+            // Upsert any remaining documents
+            if documents.len() > 0 {
+                let mut collection = self.collection.clone();
+                TOKIO_RUNTIME.spawn(async move {
+                    if let Err(e) = collection
+                        .upsert_documents(documents, None)
+                        .await
+                        .context("PGML - Error upserting changed files")
+                    {
+                        error!("{e}");
+                    }
+                });
+            }
         }
         Ok(())
     }
