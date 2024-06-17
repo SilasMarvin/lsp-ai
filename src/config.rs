@@ -433,7 +433,7 @@ mod test {
                 "models": {
                     "model1": {
                         "type": "gemini",
-                        "completions_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=",
+                        "completions_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/",
                         "model": "gemini-1.5-flash-latest",
                         "auth_token_env_var_name": "GEMINI_API_KEY",
                     },
