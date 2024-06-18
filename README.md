@@ -6,6 +6,8 @@
 
 # LSP-AI
 
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/vKxfuAxA6Z)
+
 LSP-AI is an open source [language server](https://microsoft.github.io/language-server-protocol/) that serves as a backend for performing completion with large language models and soon other AI powered functionality. Because it is a language server, it works with any editor that has LSP support.
 
 **The goal of LSP-AI is to assist and empower software engineers by integrating with the tools they already know and love not replace software engineers.**
