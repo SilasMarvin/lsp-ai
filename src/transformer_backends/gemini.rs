@@ -259,7 +259,6 @@ mod test {
         dbg!(response.generated_text);
         Ok(())
     }
-    // gemini_chat_do_generate TODO
     #[tokio::test]
     async fn gemini_chat_do_generate() -> anyhow::Result<()> {
         let configuration: config::Gemini = serde_json::from_value(json!({

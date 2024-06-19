@@ -441,15 +441,22 @@ mod test {
                 "completion": {
                     "model": "model1",
                     "parameters": {
-                        "messages": [
+                        "contents": [
                             {
-                                "role": "system",
-                                "content": "Test",
-                            },
+                              "role": "user",
+                              "parts":[{
+                               "text": "Pretend you're a snowman and stay in character for each response."}]
+                              },
                             {
-                                "role": "user",
-                                "content": "Test {CONTEXT} - {CODE}"
-                            }
+                              "role": "model",
+                              "parts":[{
+                               "text": "Hello! It's so cold! Isn't that great?"}]
+                              },
+                            {
+                              "role": "user",
+                              "parts":[{
+                               "text": "What's your favorite season of the year?"}]
+                              }
                         ],
                         "max_new_tokens": 32,
                     }
