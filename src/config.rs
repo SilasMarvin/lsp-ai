@@ -423,6 +423,7 @@ mod test {
         });
         Config::new(args).unwrap();
     }
+
     #[test]
     fn gemini_config() {
         let args = json!({
@@ -441,24 +442,22 @@ mod test {
                 "completion": {
                     "model": "model1",
                     "parameters": {
+                        "systemInstruction": {
+                            "role": "system",
+                            "parts": [{
+                                "text": "TEST system instruction"
+                            }]
+                        },
+                        "generationConfig": {
+                            "maxOutputTokens": 10
+                        },
                         "contents": [
-                            {
-                              "role": "user",
-                              "parts":[{
-                               "text": "Pretend you're a snowman and stay in character for each response."}]
-                              },
-                            {
-                              "role": "model",
-                              "parts":[{
-                               "text": "Hello! It's so cold! Isn't that great?"}]
-                              },
-                            {
-                              "role": "user",
-                              "parts":[{
-                               "text": "What's your favorite season of the year?"}]
-                              }
-                        ],
-                        "max_new_tokens": 32,
+                          {
+                            "role": "user",
+                            "parts":[{
+                             "text": "TEST - {CONTEXT} and {CODE}"}]
+                            }
+                         ]
                     }
                 }
             }

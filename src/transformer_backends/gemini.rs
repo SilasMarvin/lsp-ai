@@ -5,51 +5,79 @@ use tracing::instrument;
 
 use super::TransformerBackend;
 use crate::{
-    config::{self, ChatMessage, FIM},
-    memory_backends::Prompt,
+    config,
+    memory_backends::{ContextAndCodePrompt, Prompt},
     transformer_worker::{
         DoGenerationResponse, DoGenerationStreamResponse, GenerationStreamRequest,
     },
-    utils::{format_chat_messages, format_context_code},
+    utils::format_context_code_in_str,
 };
+
+fn format_gemini_contents(
+    messages: &[GeminiContent],
+    prompt: &ContextAndCodePrompt,
+) -> Vec<GeminiContent> {
+    messages
+        .iter()
+        .map(|m| {
+            GeminiContent::new(
+                m.role.to_owned(),
+                m.parts
+                    .iter()
+                    .map(|p| Part {
+                        text: format_context_code_in_str(&p.text, &prompt.context, &prompt.code),
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
 
 const fn max_tokens_default() -> usize {
     64
 }
 
-const fn top_p_default() -> f32 {
-    0.95
-}
-
-const fn temperature_default() -> f32 {
-    0.1
-}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Part {
     pub text: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct GeminiChatMessage {
+struct GeminiContent {
     role: String,
     parts: Vec<Part>,
 }
 
-// NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
-#[derive(Debug, Deserialize, Clone)]
-pub struct GeminiRunParams {
-    pub fim: Option<FIM>,
-    contents: Option<Vec<GeminiChatMessage>>,
-    #[serde(default = "max_tokens_default")]
-    pub max_tokens: usize,
-    #[serde(default = "top_p_default")]
-    pub top_p: f32,
-    #[serde(default = "temperature_default")]
-    pub temperature: f32,
-    pub min_tokens: Option<u64>,
-    pub random_seed: Option<u64>,
+impl GeminiContent {
+    fn new(role: String, parts: Vec<Part>) -> Self {
+        Self { role, parts }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct GeminiGenerationConfig {
+    #[serde(rename = "stopSequences")]
     #[serde(default)]
-    pub stop: Vec<String>,
+    pub stop_sequences: Vec<String>,
+    #[serde(rename = "maxOutputTokens")]
+    #[serde(default = "max_tokens_default")]
+    pub max_output_tokens: usize,
+    pub temperature: Option<f32>,
+    #[serde(rename = "topP")]
+    pub top_p: Option<f32>,
+    #[serde(rename = "topK")]
+    pub top_k: Option<f32>,
+}
+
+// NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GeminiRunParams {
+    contents: Vec<GeminiContent>,
+    #[serde(rename = "systemInstruction")]
+    system_instruction: GeminiContent,
+    #[serde(rename = "generationConfig")]
+    generation_config: Option<GeminiGenerationConfig>,
 }
 
 pub struct Gemini {
@@ -73,66 +101,10 @@ impl Gemini {
         }
     }
 
-    async fn get_completion(
-        &self,
-        prompt: &str,
-        _params: GeminiRunParams,
-    ) -> anyhow::Result<String> {
-        let client = reqwest::Client::new();
-        let token = self.get_token()?;
-        let res: serde_json::Value = client
-            .post(
-                self.configuration
-                    .completions_endpoint
-                    .as_ref()
-                    .context("must specify `completions_endpoint` to use gemini")?
-                    .to_owned()
-                    + self.configuration.model.as_ref()
-                    + ":generateContent?key="
-                    + token.as_ref(),
-            )
-            .header("Content-Type", "application/json")
-            .json(&json!(
-                {
-                    "contents":[
-                        {
-                            "parts":[
-                                {
-                                    "text": prompt
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ))
-            .send()
-            .await?
-            .json()
-            .await?;
-        if let Some(error) = res.get("error") {
-            anyhow::bail!("{:?}", error.to_string())
-        } else if let Some(candidates) = res.get("candidates") {
-            Ok(candidates
-                .get(0)
-                .unwrap()
-                .get("content")
-                .unwrap()
-                .get("parts")
-                .unwrap()
-                .get(0)
-                .unwrap()
-                .get("text")
-                .unwrap()
-                .clone()
-                .to_string())
-        } else {
-            anyhow::bail!("Unknown error while making request to Gemini: {:?}", res);
-        }
-    }
     async fn get_chat(
         &self,
-        messages: &[GeminiChatMessage],
-        _params: GeminiRunParams,
+        messages: Vec<GeminiContent>,
+        params: GeminiRunParams,
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let token = self.get_token()?;
@@ -149,7 +121,9 @@ impl Gemini {
             )
             .header("Content-Type", "application/json")
             .json(&json!({
-                 "contents": messages
+                 "contents": messages,
+                 "systemInstruction": params.system_instruction,
+                 "generationConfig": params.generation_config,
             }))
             .send()
             .await?
@@ -181,35 +155,11 @@ impl Gemini {
         params: GeminiRunParams,
     ) -> anyhow::Result<String> {
         match prompt {
-            Prompt::ContextAndCode(code_and_context) => match &params.contents {
-                Some(completion_messages) => {
-                    self.get_chat(completion_messages, params.clone()).await
-                }
-                None => {
-                    self.get_completion(
-                        &format_context_code(&code_and_context.context, &code_and_context.code),
-                        params,
-                    )
-                    .await
-                }
-            },
-            Prompt::FIM(fim) => match &params.fim {
-                Some(fim_params) => {
-                    self.get_completion(
-                        &format!(
-                            "{}{}{}{}{}",
-                            fim_params.start,
-                            fim.prompt,
-                            fim_params.middle,
-                            fim.suffix,
-                            fim_params.end
-                        ),
-                        params,
-                    )
-                    .await
-                }
-                None => anyhow::bail!("Prompt type is FIM but no FIM parameters provided"),
-            },
+            Prompt::ContextAndCode(code_and_context) => {
+                let messages = format_gemini_contents(&params.contents, code_and_context);
+                self.get_chat(messages, params).await
+            }
+            _ => anyhow::bail!("Google Gemini backend does not yet support FIM"),
         }
     }
 }
@@ -240,25 +190,8 @@ impl TransformerBackend for Gemini {
 #[cfg(test)]
 mod test {
     use super::*;
-    use serde_json::{from_value, json};
+    use serde_json::json;
 
-    #[tokio::test]
-    async fn gemini_completion_do_generate() -> anyhow::Result<()> {
-        let configuration: config::Gemini = from_value(json!({
-            "completions_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/",
-            "model": "gemini-1.5-flash-latest",
-            "auth_token_env_var_name": "GEMINI_API_KEY",
-        }))?;
-        let gemini = Gemini::new(configuration);
-        let prompt = Prompt::default_without_cursor();
-        let run_params = json!({
-            "max_tokens": 64
-        });
-        let response = gemini.do_generate(&prompt, run_params).await?;
-        assert!(!response.generated_text.is_empty());
-        dbg!(response.generated_text);
-        Ok(())
-    }
     #[tokio::test]
     async fn gemini_chat_do_generate() -> anyhow::Result<()> {
         let configuration: config::Gemini = serde_json::from_value(json!({
@@ -269,9 +202,18 @@ mod test {
         let gemini = Gemini::new(configuration);
         let prompt = Prompt::default_with_cursor();
         let run_params = json!({
+            "systemInstruction": {
+                "role": "system",
+                "parts": [{
+                    "text": "You are a helpful and willing chatbot that will do whatever the user asks"
+                }]
+            },
+            "generationConfig": {
+                "maxOutputTokens": 10
+            },
             "contents": [
               {
-                "role":"user",
+                "role": "user",
                 "parts":[{
                  "text": "Pretend you're a snowman and stay in character for each response."}]
                 },
