@@ -2,17 +2,12 @@ use lsp_types::{
     DidChangeTextDocumentParams, DidOpenTextDocumentParams, RenameFilesParams,
     TextDocumentPositionParams,
 };
-use serde::Deserialize;
 use serde_json::Value;
 
-use crate::config::{ChatMessage, Config, ValidMemoryBackend};
+use crate::config::{Config, ValidMemoryBackend};
 
 pub mod file_store;
 mod postgresml;
-
-const fn max_context_length_default() -> usize {
-    1024
-}
 
 #[derive(Clone, Debug)]
 pub enum PromptType {
@@ -20,11 +15,20 @@ pub enum PromptType {
     FIM,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone)]
 pub struct MemoryRunParams {
-    pub messages: Option<Vec<ChatMessage>>,
-    #[serde(default = "max_context_length_default")]
+    pub is_for_chat: bool,
     pub max_context_length: usize,
+}
+
+impl From<&Value> for MemoryRunParams {
+    fn from(value: &Value) -> Self {
+        Self {
+            max_context_length: value["max_context_length"].as_u64().unwrap_or(1024) as usize,
+            // messages are for most backends, contents are for Gemini
+            is_for_chat: value["messages"].is_array() || value["contents"].is_array(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -119,7 +123,7 @@ pub trait MemoryBackend {
         &self,
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
-        params: Value,
+        params: &Value,
     ) -> anyhow::Result<Prompt>;
     async fn get_filter_text(
         &self,

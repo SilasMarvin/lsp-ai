@@ -114,7 +114,7 @@ impl FileStore {
 
         Ok(match prompt_type {
             PromptType::ContextAndCode => {
-                if params.messages.is_some() {
+                if params.is_for_chat {
                     let max_length = tokens_to_estimated_characters(params.max_context_length);
                     let start = cursor_index.saturating_sub(max_length / 2);
                     let end = rope
@@ -185,9 +185,9 @@ impl MemoryBackend for FileStore {
         &self,
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
-        params: Value,
+        params: &Value,
     ) -> anyhow::Result<Prompt> {
-        let params: MemoryRunParams = serde_json::from_value(params)?;
+        let params: MemoryRunParams = params.try_into()?;
         self.build_code(position, prompt_type, params)
     }
 
@@ -414,7 +414,7 @@ The end with a trailing new line
                     },
                 },
                 PromptType::ContextAndCode,
-                json!({}),
+                &json!({}),
             )
             .await?;
         let prompt: ContextAndCodePrompt = prompt.try_into()?;
@@ -434,7 +434,7 @@ The end with a trailing new line
                     },
                 },
                 PromptType::FIM,
-                json!({}),
+                &json!({}),
             )
             .await?;
         let prompt: FIMPrompt = prompt.try_into()?;
@@ -463,7 +463,7 @@ The end with a trailing new line
                     },
                 },
                 PromptType::ContextAndCode,
-                json!({
+                &json!({
                     "messages": []
                 }),
             )
@@ -510,7 +510,7 @@ The end with a trailing new line
                     },
                 },
                 PromptType::ContextAndCode,
-                json!({}),
+                &json!({}),
             )
             .await?;
         let prompt: ContextAndCodePrompt = prompt.try_into()?;
@@ -542,7 +542,7 @@ The end with a trailing new line
                     },
                 },
                 PromptType::ContextAndCode,
-                json!({"messages": []}),
+                &json!({"messages": []}),
             )
             .await?;
         let prompt: ContextAndCodePrompt = prompt.try_into()?;

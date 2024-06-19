@@ -132,9 +132,9 @@ impl MemoryBackend for PostgresML {
         &self,
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
-        params: Value,
+        params: &Value,
     ) -> anyhow::Result<Prompt> {
-        let params: MemoryRunParams = serde_json::from_value(params)?;
+        let params: MemoryRunParams = params.try_into()?;
         let query = self
             .file_store
             .get_characters_around_position(position, 512)?;
