@@ -1569,6 +1569,7 @@ dependencies = [
  "llama-cpp-2",
  "lsp-server",
  "lsp-types",
+ "md5",
  "minijinja",
  "once_cell",
  "parking_lot",
