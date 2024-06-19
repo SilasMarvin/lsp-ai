@@ -36,6 +36,7 @@ tree-sitter = "0.22"
 utils-tree-sitter = { workspace = true, features = ["all"] }
 splitter-tree-sitter = { workspace = true }
 text-splitter = { version = "0.13.3" }
+md5 = "0.7.0"
 
 [build-dependencies]
 cc="*"

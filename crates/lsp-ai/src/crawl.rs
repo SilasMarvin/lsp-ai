@@ -57,7 +57,6 @@ impl Crawl {
             for result in WalkBuilder::new(&root_uri[7..]).build() {
                 let result = result?;
                 let path = result.path();
-                eprintln!("CRAWLING: {}", path.display());
                 if !path.is_dir() {
                     if let Some(path_str) = path.to_str() {
                         if self.crawl_config.all_files {
