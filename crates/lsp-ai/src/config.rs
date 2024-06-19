@@ -139,6 +139,8 @@ pub struct PostgresML {
     pub crawl: Option<Crawl>,
     #[serde(default)]
     pub splitter: ValidSplitter,
+    pub embedding_model: Option<String>,
+    pub embedding_model_parameters: Option<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]

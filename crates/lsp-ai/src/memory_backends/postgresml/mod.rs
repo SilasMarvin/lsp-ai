@@ -29,11 +29,30 @@ use super::{
 
 const RESYNC_MAX_FILE_SIZE: u64 = 10_000_000;
 
-fn chunk_to_document(uri: &str, chunk: Chunk) -> Value {
+fn format_chunk_chunk(uri: &str, chunk: &Chunk, root_uri: Option<&str>) -> String {
+    let path = match root_uri {
+        Some(root_uri) => {
+            if uri.starts_with(root_uri) {
+                &uri[root_uri.chars().count()..]
+            } else {
+                uri
+            }
+        }
+        None => uri,
+    };
+    format!(
+        r#"--{path}--
+{}
+"#,
+        chunk.text
+    )
+}
+
+fn chunk_to_document(uri: &str, chunk: Chunk, root_uri: Option<&str>) -> Value {
     json!({
         "id": chunk_to_id(uri, &chunk),
         "uri": uri,
-        "text": chunk.text,
+        "text": format_chunk_chunk(uri, &chunk, root_uri),
         "range": chunk.range
     })
 }
@@ -43,6 +62,7 @@ async fn split_and_upsert_file(
     collection: &mut Collection,
     file_store: Arc<FileStore>,
     splitter: Arc<Box<dyn Splitter + Send + Sync>>,
+    root_uri: Option<&str>,
 ) -> anyhow::Result<()> {
     // We need to make sure we don't hold the file_store lock while performing a network call
     let chunks = {
@@ -55,7 +75,7 @@ async fn split_and_upsert_file(
     let chunks = chunks.with_context(|| format!("file not found for splitting: {uri}"))?;
     let documents = chunks
         .into_iter()
-        .map(|chunk| chunk_to_document(uri, chunk).into())
+        .map(|chunk| chunk_to_document(uri, chunk, root_uri).into())
         .collect();
     collection
         .upsert_documents(documents, None)
@@ -65,7 +85,7 @@ async fn split_and_upsert_file(
 
 #[derive(Clone)]
 pub struct PostgresML {
-    _config: Config,
+    config: Config,
     file_store: Arc<FileStore>,
     collection: Collection,
     pipeline: Pipeline,
@@ -100,21 +120,19 @@ impl PostgresML {
             std::env::var("PGML_DATABASE_URL").context("please provide either the `database_url` in the `postgresml` config, or set the `PGML_DATABASE_URL` environment variable")?
         };
 
-        let collection_name = match configuration.client_params.root_uri.clone() {
-            Some(root_uri) => format!("{:x}", md5::compute(root_uri.as_bytes())),
-            None => {
-                warn!("no root_uri provided in server configuration - generating random string for collection name");
-                rand::thread_rng()
-                    .sample_iter(&Alphanumeric)
-                    .take(21)
-                    .map(char::from)
-                    .collect()
+        // Build our pipeline schema
+        let pipeline = match postgresml_config.embedding_model {
+            Some(embedding_model) => {
+                json!({
+                    "text": {
+                        "semantic_search": {
+                            "model": embedding_model,
+                            "parameters": postgresml_config.embedding_model_parameters
+                        }
+                    }
+                })
             }
-        };
-        let mut collection = Collection::new(&collection_name, Some(database_url))?;
-        let mut pipeline = Pipeline::new(
-            "v1",
-            Some(
+            None => {
                 json!({
                     "text": {
                         "semantic_search": {
@@ -125,16 +143,36 @@ impl PostgresML {
                         }
                     }
                 })
-                .into(),
+            }
+        };
+
+        // When building the collection name we include the Pipeline schema
+        // If the user changes the Pipeline schema, it will take affect without them having to delete the old files
+        let collection_name = match configuration.client_params.root_uri.clone() {
+            Some(root_uri) => format!(
+                "{:x}",
+                md5::compute(
+                    format!("{root_uri}_{}", serde_json::to_string(&pipeline)?).as_bytes()
+                )
             ),
-        )?;
+            None => {
+                warn!("no root_uri provided in server configuration - generating random string for collection name");
+                rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(21)
+                    .map(char::from)
+                    .collect()
+            }
+        };
+        let mut collection = Collection::new(&collection_name, Some(database_url))?;
+        let mut pipeline = Pipeline::new("v1", Some(pipeline.into()))?;
 
         // Add the Pipeline to the Collection
         TOKIO_RUNTIME.block_on(async {
             collection
                 .add_pipeline(&mut pipeline)
                 .await
-                .context("PGML - Error adding pipeline to collection")
+                .context("PGML - error adding pipeline to collection")
         })?;
 
         // Setup up a debouncer for changed text documents
@@ -142,6 +180,7 @@ impl PostgresML {
         let mut task_collection = collection.clone();
         let task_file_store = file_store.clone();
         let task_splitter = splitter.clone();
+        let task_root_uri = configuration.client_params.root_uri.clone();
         TOKIO_RUNTIME.spawn(async move {
             let duration = Duration::from_millis(500);
             let mut file_uris = Vec::new();
@@ -218,7 +257,9 @@ impl PostgresML {
                         .map(|(chunks, uri)| {
                             chunks
                                 .into_iter()
-                                .map(|chunk| chunk_to_document(&uri, chunk))
+                                .map(|chunk| {
+                                    chunk_to_document(&uri, chunk, task_root_uri.as_deref())
+                                })
                                 .collect::<Vec<Value>>()
                         })
                         .flatten()
@@ -227,7 +268,7 @@ impl PostgresML {
                     if let Err(e) = task_collection
                         .upsert_documents(documents, None)
                         .await
-                        .context("PGML - Error upserting changed files")
+                        .context("PGML - error upserting changed files")
                     {
                         error!("{e:?}");
                         continue;
@@ -239,7 +280,7 @@ impl PostgresML {
         });
 
         let s = Self {
-            _config: configuration,
+            config: configuration,
             file_store,
             collection,
             pipeline,
@@ -317,7 +358,14 @@ impl PostgresML {
                     .splitter
                     .split_file_contents(&uri, &contents)
                     .into_iter()
-                    .map(|chunk| chunk_to_document(&uri, chunk).into())
+                    .map(|chunk| {
+                        chunk_to_document(
+                            &uri,
+                            chunk,
+                            self.config.client_params.root_uri.as_deref(),
+                        )
+                        .into()
+                    })
                     .collect();
                 chunks_to_upsert.extend(chunks);
                 // If we have over 10 mega bytes of chunks do the upsert
@@ -326,9 +374,17 @@ impl PostgresML {
                         .upsert_documents(chunks_to_upsert, None)
                         .await
                         .context("PGML - error upserting documents during resync")?;
+                    chunks_to_upsert = vec![];
+                    current_chunks_bytes = 0;
                 }
-                chunks_to_upsert = vec![];
             }
+        }
+        // Upsert any remaining chunks
+        if chunks_to_upsert.len() > 0 {
+            collection
+                .upsert_documents(chunks_to_upsert, None)
+                .await
+                .context("PGML - error upserting documents during resync")?;
         }
         // Delete documents
         if !documents_to_delete.is_empty() {
@@ -382,7 +438,14 @@ impl PostgresML {
                         .splitter
                         .split_file_contents(&uri, &contents)
                         .into_iter()
-                        .map(|chunk| chunk_to_document(&uri, chunk).into())
+                        .map(|chunk| {
+                            chunk_to_document(
+                                &uri,
+                                chunk,
+                                self.config.client_params.root_uri.as_deref(),
+                            )
+                            .into()
+                        })
                         .collect();
                     documents.extend(chunks);
                     // If we have over 10 mega bytes of data do the upsert
@@ -440,17 +503,28 @@ impl MemoryBackend for PostgresML {
     ) -> anyhow::Result<Prompt> {
         let params: MemoryRunParams = serde_json::from_value(params)?;
 
+        // TOOD: FIGURE THIS OUT
+        // let prompt_size = params.max_context_length
+
         // Build the query
         let query = self
             .file_store
             .get_characters_around_position(position, 512)?;
 
-        // Get the code around the Cursor
+        // Build the prompt
         let mut file_store_params = params.clone();
         file_store_params.max_context_length = 512;
         let code = self
             .file_store
-            .build_code(position, prompt_type, file_store_params)?;
+            .build_code(position, prompt_type, file_store_params, false)?;
+
+        // Get the byte of the cursor
+        let cursor_byte = self.file_store.position_to_byte(position)?;
+        eprintln!(
+            "CURSOR BYTE: {} IN DOCUMENT: {}",
+            cursor_byte,
+            position.text_document.uri.to_string()
+        );
 
         // Get the context
         let limit = params.max_context_length / 512;
@@ -467,6 +541,29 @@ impl MemoryBackend for PostgresML {
                                 }
                             }
                         },
+                        "filter": {
+                            "$or": [
+                                {
+                                    "uri": {
+                                        "$ne": position.text_document.uri.to_string()
+                                    }
+                                },
+                                {
+                                    "range": {
+                                        "start": {
+                                            "$gt": cursor_byte
+                                        },
+                                    },
+                                },
+                                {
+                                    "range": {
+                                        "end": {
+                                            "$lt": cursor_byte
+                                        },
+                                    }
+                                }
+                            ]
+                        }
                     },
                     "limit": limit
                 })
@@ -484,6 +581,8 @@ impl MemoryBackend for PostgresML {
             })
             .collect::<anyhow::Result<Vec<String>>>()?
             .join("\n\n");
+
+        eprintln!("THE CONTEXT:\n\n{context}\n\n");
 
         let chars = tokens_to_estimated_characters(params.max_context_length.saturating_sub(512));
         let context = &context[..chars.min(context.len())];
@@ -512,9 +611,17 @@ impl MemoryBackend for PostgresML {
         let mut collection = self.collection.clone();
         let file_store = self.file_store.clone();
         let splitter = self.splitter.clone();
+        let root_uri = self.config.client_params.root_uri.clone();
         TOKIO_RUNTIME.spawn(async move {
             let uri = params.text_document.uri.to_string();
-            if let Err(e) = split_and_upsert_file(&uri, &mut collection, file_store, splitter).await
+            if let Err(e) = split_and_upsert_file(
+                &uri,
+                &mut collection,
+                file_store,
+                splitter,
+                root_uri.as_deref(),
+            )
+            .await
             {
                 error!("{e:?}")
             }
@@ -544,6 +651,7 @@ impl MemoryBackend for PostgresML {
         let mut collection = self.collection.clone();
         let file_store = self.file_store.clone();
         let splitter = self.splitter.clone();
+        let root_uri = self.config.client_params.root_uri.clone();
         TOKIO_RUNTIME.spawn(async move {
             for file in params.files {
                 if let Err(e) = collection
@@ -564,6 +672,7 @@ impl MemoryBackend for PostgresML {
                     &mut collection,
                     file_store.clone(),
                     splitter.clone(),
+                    root_uri.as_deref(),
                 )
                 .await
                 {

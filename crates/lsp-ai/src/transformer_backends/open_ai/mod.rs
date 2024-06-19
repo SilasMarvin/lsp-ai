@@ -156,6 +156,12 @@ impl OpenAI {
         messages: Vec<ChatMessage>,
         params: OpenAIRunParams,
     ) -> anyhow::Result<String> {
+        eprintln!("\n\n\n\n");
+        for message in &messages {
+            eprintln!("{}:\n{}\n", message.role.to_string(), message.content);
+        }
+        eprintln!("\n\n\n\n");
+
         let client = reqwest::Client::new();
         let token = self.get_token()?;
         let res: OpenAIChatResponse = client
