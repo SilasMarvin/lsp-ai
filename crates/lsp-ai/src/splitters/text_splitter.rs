@@ -3,18 +3,21 @@ use crate::{config, memory_backends::file_store::File};
 use super::{ByteRange, Chunk, Splitter};
 
 pub struct TextSplitter {
+    chunk_size: usize,
     splitter: text_splitter::TextSplitter<text_splitter::Characters>,
 }
 
 impl TextSplitter {
     pub fn new(config: config::TextSplitter) -> Self {
         Self {
+            chunk_size: config.chunk_size,
             splitter: text_splitter::TextSplitter::new(config.chunk_size),
         }
     }
 
     pub fn new_with_chunk_size(chunk_size: usize) -> Self {
         Self {
+            chunk_size,
             splitter: text_splitter::TextSplitter::new(chunk_size),
         }
     }
@@ -36,5 +39,9 @@ impl Splitter for TextSplitter {
                 ));
                 acc
             })
+    }
+
+    fn chunk_size(&self) -> usize {
+        self.chunk_size
     }
 }

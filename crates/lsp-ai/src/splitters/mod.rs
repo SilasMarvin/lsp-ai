@@ -39,6 +39,8 @@ pub trait Splitter {
     fn does_use_tree_sitter(&self) -> bool {
         false
     }
+
+    fn chunk_size(&self) -> usize;
 }
 
 impl TryFrom<ValidSplitter> for Box<dyn Splitter + Send + Sync> {

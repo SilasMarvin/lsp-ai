@@ -1,6 +1,6 @@
 use anyhow::Context;
 use indexmap::IndexSet;
-use lsp_types::TextDocumentPositionParams;
+use lsp_types::{Position, TextDocumentPositionParams};
 use parking_lot::Mutex;
 use ropey::Rope;
 use serde_json::Value;
@@ -154,6 +154,7 @@ impl FileStore {
         &self,
         position: &TextDocumentPositionParams,
         characters: usize,
+        pull_from_multiple_files: bool,
     ) -> anyhow::Result<(Rope, usize)> {
         // Get the rope and set our initial cursor index
         let current_document_uri = position.text_document.uri.to_string();
@@ -174,7 +175,7 @@ impl FileStore {
             .filter(|f| **f != current_document_uri)
         {
             let needed = characters.saturating_sub(rope.len_chars() + 1);
-            if needed == 0 {
+            if needed == 0 || !pull_from_multiple_files {
                 break;
             }
             let file_map = self.file_map.lock();
@@ -220,9 +221,13 @@ impl FileStore {
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
         params: MemoryRunParams,
+        pull_from_multiple_files: bool,
     ) -> anyhow::Result<Prompt> {
-        let (mut rope, cursor_index) =
-            self.get_rope_for_position(position, params.max_context_length)?;
+        let (mut rope, cursor_index) = self.get_rope_for_position(
+            position,
+            params.max_context_length,
+            pull_from_multiple_files,
+        )?;
 
         Ok(match prompt_type {
             PromptType::ContextAndCode => {
@@ -277,6 +282,20 @@ impl FileStore {
     pub fn contains_file(&self, uri: &str) -> bool {
         self.file_map.lock().contains_key(uri)
     }
+
+    pub fn position_to_byte(&self, position: &TextDocumentPositionParams) -> anyhow::Result<usize> {
+        let file_map = self.file_map.lock();
+        let uri = position.text_document.uri.to_string();
+        let file = file_map
+            .get(&uri)
+            .with_context(|| format!("trying to get file that does not exist {uri}"))?;
+        let line_char_index = file
+            .rope
+            .try_line_to_char(position.position.line as usize)?;
+        Ok(file
+            .rope
+            .try_char_to_byte(line_char_index + position.position.character as usize)?)
+    }
 }
 
 #[async_trait::async_trait]
@@ -307,7 +326,7 @@ impl MemoryBackend for FileStore {
         params: &Value,
     ) -> anyhow::Result<Prompt> {
         let params: MemoryRunParams = params.try_into()?;
-        self.build_code(position, prompt_type, params)
+        self.build_code(position, prompt_type, params, true)
     }
 
     #[instrument(skip(self))]
