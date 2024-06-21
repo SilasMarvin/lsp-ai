@@ -150,14 +150,20 @@ pub struct Crawl {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct PostgresMLEmbeddingModel {
+    pub model: String,
+    pub embed_parameters: Option<Value>,
+    pub query_parameters: Option<Value>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PostgresML {
     pub database_url: Option<String>,
     pub crawl: Option<Crawl>,
     #[serde(default)]
     pub splitter: ValidSplitter,
-    pub embedding_model: Option<String>,
-    pub embedding_model_parameters: Option<Value>,
+    pub embedding_model: Option<PostgresMLEmbeddingModel>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]

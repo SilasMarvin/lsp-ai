@@ -18,13 +18,13 @@ pub enum PromptType {
 #[derive(Clone)]
 pub struct MemoryRunParams {
     pub is_for_chat: bool,
-    pub max_context_length: usize,
+    pub max_context: usize,
 }
 
 impl From<&Value> for MemoryRunParams {
     fn from(value: &Value) -> Self {
         Self {
-            max_context_length: value["max_context_length"].as_u64().unwrap_or(1024) as usize,
+            max_context: value["max_context"].as_u64().unwrap_or(1024) as usize,
             // messages are for most backends, contents are for Gemini
             is_for_chat: value["messages"].is_array() || value["contents"].is_array(),
         }
