@@ -1,6 +1,6 @@
 use anyhow::Context;
 use indexmap::IndexSet;
-use lsp_types::{Position, TextDocumentPositionParams};
+use lsp_types::TextDocumentPositionParams;
 use parking_lot::Mutex;
 use ropey::Rope;
 use serde_json::Value;

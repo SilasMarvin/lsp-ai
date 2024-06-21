@@ -64,7 +64,7 @@ async fn do_build_prompt(
     memory_backend: Arc<Box<dyn MemoryBackend + Send + Sync>>,
 ) -> anyhow::Result<()> {
     let prompt = memory_backend
-        .build_prompt(&params.position, params.prompt_type, params.params)
+        .build_prompt(&params.position, params.prompt_type, &params.params)
         .await?;
     params
         .tx
