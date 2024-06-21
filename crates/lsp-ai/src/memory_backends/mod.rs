@@ -10,7 +10,7 @@ use crate::config::{ChatMessage, Config, ValidMemoryBackend};
 pub mod file_store;
 mod postgresml;
 
-const fn max_context_length_default() -> usize {
+const fn max_context_default() -> usize {
     1024
 }
 
@@ -23,8 +23,8 @@ pub enum PromptType {
 #[derive(Clone, Deserialize)]
 pub struct MemoryRunParams {
     pub messages: Option<Vec<ChatMessage>>,
-    #[serde(default = "max_context_length_default")]
-    pub max_context_length: usize,
+    #[serde(default = "max_context_default")]
+    pub max_context: usize,
 }
 
 #[derive(Debug)]

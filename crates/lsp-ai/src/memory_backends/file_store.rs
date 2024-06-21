@@ -223,16 +223,13 @@ impl FileStore {
         params: MemoryRunParams,
         pull_from_multiple_files: bool,
     ) -> anyhow::Result<Prompt> {
-        let (mut rope, cursor_index) = self.get_rope_for_position(
-            position,
-            params.max_context_length,
-            pull_from_multiple_files,
-        )?;
+        let (mut rope, cursor_index) =
+            self.get_rope_for_position(position, params.max_context, pull_from_multiple_files)?;
 
         Ok(match prompt_type {
             PromptType::ContextAndCode => {
                 if params.messages.is_some() {
-                    let max_length = tokens_to_estimated_characters(params.max_context_length);
+                    let max_length = tokens_to_estimated_characters(params.max_context);
                     let start = cursor_index.saturating_sub(max_length / 2);
                     let end = rope
                         .len_chars()
@@ -248,7 +245,7 @@ impl FileStore {
                     ))
                 } else {
                     let start = cursor_index
-                        .saturating_sub(tokens_to_estimated_characters(params.max_context_length));
+                        .saturating_sub(tokens_to_estimated_characters(params.max_context));
                     let rope_slice = rope
                         .get_slice(start..cursor_index)
                         .context("Error getting rope slice")?;
@@ -259,7 +256,7 @@ impl FileStore {
                 }
             }
             PromptType::FIM => {
-                let max_length = tokens_to_estimated_characters(params.max_context_length);
+                let max_length = tokens_to_estimated_characters(params.max_context);
                 let start = cursor_index.saturating_sub(max_length / 2);
                 let end = rope
                     .len_chars()
