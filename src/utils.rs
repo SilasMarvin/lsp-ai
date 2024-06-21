@@ -29,12 +29,14 @@ pub fn format_chat_messages(
         .map(|m| {
             ChatMessage::new(
                 m.role.to_owned(),
-                m.content
-                    .replace("{CONTEXT}", &prompt.context)
-                    .replace("{CODE}", &prompt.code),
+                format_context_code_in_str(&m.content, &prompt.context, &prompt.code),
             )
         })
         .collect()
+}
+
+pub fn format_context_code_in_str(s: &str, context: &str, code: &str) -> String {
+    s.replace("{CONTEXT}", context).replace("{CODE}", code)
 }
 
 pub fn format_context_code(context: &str, code: &str) -> String {

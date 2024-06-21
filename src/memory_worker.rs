@@ -70,7 +70,7 @@ async fn do_task(
         }
         WorkerRequest::Prompt(params) => {
             let prompt = memory_backend
-                .build_prompt(&params.position, params.prompt_type, params.params)
+                .build_prompt(&params.position, params.prompt_type, &params.params)
                 .await?;
             params
                 .tx

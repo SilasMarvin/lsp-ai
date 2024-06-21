@@ -163,7 +163,7 @@ impl OpenAI {
                 self.configuration
                     .chat_endpoint
                     .as_ref()
-                    .context("must specify `completions_endpoint` to use completions")?,
+                    .context("must specify `chat_endpoint` to use completions")?,
             )
             .bearer_auth(token)
             .header("Content-Type", "application/json")
