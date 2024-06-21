@@ -342,7 +342,6 @@ async fn do_completion(
 
     // Get the response
     let mut response = transformer_backend.do_completion(&prompt, params).await?;
-    eprintln!("\n\n\n\nGOT RESPONSE: {}\n\n\n\n", response.insert_text);
 
     if let Some(post_process) = config.get_completions_post_process() {
         response.insert_text = post_process_response(response.insert_text, &prompt, &post_process);
