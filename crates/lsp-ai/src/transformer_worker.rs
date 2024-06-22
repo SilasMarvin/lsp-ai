@@ -89,14 +89,14 @@ pub struct DoGenerationStreamResponse {
 fn post_process_start(response: String, front: &str) -> String {
     let mut front_match = response.len();
     loop {
-        if response.len() == 0 || front.ends_with(&response[..front_match]) {
+        if response.is_empty() || front.ends_with(&response[..front_match]) {
             break;
         } else {
             front_match -= 1;
         }
     }
     if front_match > 0 {
-        (&response[front_match..]).to_owned()
+        response[front_match..].to_owned()
     } else {
         response
     }
@@ -105,16 +105,14 @@ fn post_process_start(response: String, front: &str) -> String {
 fn post_process_end(response: String, back: &str) -> String {
     let mut back_match = 0;
     loop {
-        if back_match == response.len() {
-            break;
-        } else if back.starts_with(&response[back_match..]) {
+        if back_match == response.len() || back.starts_with(&response[back_match..]) {
             break;
         } else {
             back_match += 1;
         }
     }
     if back_match > 0 {
-        (&response[..back_match]).to_owned()
+        response[..back_match].to_owned()
     } else {
         response
     }
@@ -140,12 +138,10 @@ fn post_process_response(
                 } else {
                     response
                 }
+            } else if config.remove_duplicate_start {
+                post_process_start(response, &context_and_code.code)
             } else {
-                if config.remove_duplicate_start {
-                    post_process_start(response, &context_and_code.code)
-                } else {
-                    response
-                }
+                response
             }
         }
         Prompt::FIM(fim) => {
@@ -289,14 +285,12 @@ async fn generate_response(
                 .context("Completions is none")?;
             let transformer_backend = transformer_backends
                 .get(&completion_config.model)
-                .clone()
                 .with_context(|| format!("can't find model: {}", &completion_config.model))?;
             do_completion(transformer_backend, memory_backend_tx, &request, &config).await
         }
         WorkerRequest::Generation(request) => {
             let transformer_backend = transformer_backends
                 .get(&request.params.model)
-                .clone()
                 .with_context(|| format!("can't find model: {}", &request.params.model))?;
             do_generate(transformer_backend, memory_backend_tx, &request).await
         }

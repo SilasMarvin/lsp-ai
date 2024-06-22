@@ -112,15 +112,6 @@ impl ChatMessage {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Chat {
-    pub completion: Option<Vec<ChatMessage>>,
-    pub generation: Option<Vec<ChatMessage>>,
-    pub chat_template: Option<String>,
-    pub chat_format: Option<String>,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 #[allow(clippy::upper_case_acronyms)]
 #[serde(deny_unknown_fields)]
@@ -178,14 +169,6 @@ impl FileStore {
     }
 }
 
-const fn n_gpu_layers_default() -> u32 {
-    1000
-}
-
-const fn n_ctx_default() -> u32 {
-    1000
-}
-
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Ollama {
@@ -215,6 +198,17 @@ pub struct MistralFIM {
     pub max_requests_per_second: f32,
 }
 
+#[cfg(feature = "llama_cpp")]
+const fn n_gpu_layers_default() -> u32 {
+    1000
+}
+
+#[cfg(feature = "llama_cpp")]
+const fn n_ctx_default() -> u32 {
+    1000
+}
+
+#[cfg(feature = "llama_cpp")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LLaMACPP {
