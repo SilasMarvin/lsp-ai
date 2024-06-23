@@ -173,7 +173,7 @@ pub fn run(
         connection,
         config,
     ) {
-        error!("error in transformer worker: {e}")
+        error!("error in transformer worker: {e:?}")
     }
 }
 
@@ -256,7 +256,7 @@ async fn dispatch_request(
     {
         Ok(response) => response,
         Err(e) => {
-            error!("generating response: {e}");
+            error!("generating response: {e:?}");
             Response {
                 id: request.get_id(),
                 result: None,
@@ -266,7 +266,7 @@ async fn dispatch_request(
     };
 
     if let Err(e) = connection.sender.send(Message::Response(response)) {
-        error!("sending response: {e}");
+        error!("sending response: {e:?}");
     }
 }
 
@@ -412,7 +412,103 @@ async fn do_generate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory_backends::{ContextAndCodePrompt, FIMPrompt};
+    use crate::memory_backends::{
+        file_store::FileStore, ContextAndCodePrompt, FIMPrompt, MemoryBackend,
+    };
+    use serde_json::json;
+    use std::{sync::mpsc, thread};
+
+    #[tokio::test]
+    async fn test_do_completion() -> anyhow::Result<()> {
+        let (memory_tx, memory_rx) = mpsc::channel();
+        let memory_backend: Box<dyn MemoryBackend + Send + Sync> =
+            Box::new(FileStore::default_with_filler_file()?);
+        thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
+
+        let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
+            config::ValidModel::Ollama(serde_json::from_value(
+                json!({"model": "deepseek-coder:1.3b-base"}),
+            )?)
+            .try_into()?;
+        let completion_request = CompletionRequest::new(
+            serde_json::from_value(json!(0))?,
+            serde_json::from_value(json!({
+                "position": {"character":10, "line":2},
+                "textDocument": {
+                    "uri": "file:///filler.py"
+                }
+            }))?,
+        );
+        let mut config = config::Config::default_with_file_store_without_models();
+        config.config.completion = Some(serde_json::from_value(json!({
+            "model": "model1",
+            "parameters": {
+                "options": {
+                    "temperature": 0
+                }
+            }
+        }))?);
+
+        let result = do_completion(
+            &transformer_backend,
+            memory_tx,
+            &completion_request,
+            &config,
+        )
+        .await?;
+
+        assert_eq!(
+            " x * y",
+            result.result.clone().unwrap()["items"][0]["textEdit"]["newText"]
+                .as_str()
+                .unwrap()
+        );
+        assert_eq!(
+            "    return",
+            result.result.unwrap()["items"][0]["filterText"]
+                .as_str()
+                .unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_do_generate() -> anyhow::Result<()> {
+        let (memory_tx, memory_rx) = mpsc::channel();
+        let memory_backend: Box<dyn MemoryBackend + Send + Sync> =
+            Box::new(FileStore::default_with_filler_file()?);
+        thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
+
+        let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
+            config::ValidModel::Ollama(serde_json::from_value(
+                json!({"model": "deepseek-coder:1.3b-base"}),
+            )?)
+            .try_into()?;
+        let generation_request = GenerationRequest::new(
+            serde_json::from_value(json!(0))?,
+            serde_json::from_value(json!({
+                "position": {"character":10, "line":2},
+                "textDocument": {
+                    "uri": "file:///filler.py"
+                },
+                "model": "model1",
+                "parameters": {
+                    "options": {
+                        "temperature": 0
+                    }
+                }
+            }))?,
+        );
+        let result = do_generate(&transformer_backend, memory_tx, &generation_request).await?;
+
+        assert_eq!(
+            " x * y",
+            result.result.unwrap()["generatedText"].as_str().unwrap()
+        );
+
+        Ok(())
+    }
 
     #[test]
     fn test_post_process_fim() {

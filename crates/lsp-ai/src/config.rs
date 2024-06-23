@@ -371,7 +371,7 @@ impl Config {
     }
 }
 
-// This makes testing much easier.
+// For teesting use only
 #[cfg(test)]
 impl Config {
     pub fn default_with_file_store_without_models() -> Self {

@@ -126,7 +126,7 @@ impl FileStore {
                         return Ok(false);
                     }
                     // This means it has been opened before
-                    let insert_uri = format!("file://{path}");
+                    let insert_uri = format!("file:///{path}");
                     if self.file_map.lock().contains_key(&insert_uri) {
                         return Ok(true);
                     }
@@ -453,6 +453,42 @@ impl MemoryBackend for FileStore {
     }
 }
 
+// For teesting use only
+#[cfg(test)]
+impl FileStore {
+    pub fn default_with_filler_file() -> anyhow::Result<Self> {
+        let config = Config::default_with_file_store_without_models();
+        let file_store_config = if let config::ValidMemoryBackend::FileStore(file_store_config) =
+            config.config.memory.clone()
+        {
+            file_store_config
+        } else {
+            anyhow::bail!("requires a file_store_config")
+        };
+        let f = FileStore::new(file_store_config, config)?;
+
+        let uri = "file:///filler.py";
+        let text = r#"# Multiplies two numbers
+def multiply_two_numbers(x, y):
+    return
+
+# A singular test
+assert multiply_two_numbers(2, 3) == 6
+"#;
+        let params = lsp_types::DidOpenTextDocumentParams {
+            text_document: lsp_types::TextDocumentItem {
+                uri: reqwest::Url::parse(uri).unwrap(),
+                language_id: "filler".to_string(),
+                version: 0,
+                text: text.to_string(),
+            },
+        };
+        f.opened_text_document(params)?;
+
+        Ok(f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,7 +512,7 @@ mod tests {
     }
 
     fn generate_filler_text_document(uri: Option<&str>, text: Option<&str>) -> TextDocumentItem {
-        let uri = uri.unwrap_or("file://filler/");
+        let uri = uri.unwrap_or("file:///filler/");
         let text = text.unwrap_or("Here is the document body");
         TextDocumentItem {
             uri: reqwest::Url::parse(uri).unwrap(),
@@ -496,7 +532,7 @@ mod tests {
         let file = file_store
             .file_map
             .lock()
-            .get("file://filler/")
+            .get("file:///filler/")
             .unwrap()
             .clone();
         assert_eq!(file.rope.to_string(), "Here is the document body");
@@ -513,8 +549,8 @@ mod tests {
 
         let params = RenameFilesParams {
             files: vec![FileRename {
-                old_uri: "file://filler/".to_string(),
-                new_uri: "file://filler2/".to_string(),
+                old_uri: "file:///filler/".to_string(),
+                new_uri: "file:///filler2/".to_string(),
             }],
         };
         file_store.renamed_files(params)?;
@@ -522,7 +558,7 @@ mod tests {
         let file = file_store
             .file_map
             .lock()
-            .get("file://filler2/")
+            .get("file:///filler2/")
             .unwrap()
             .clone();
         assert_eq!(file.rope.to_string(), "Here is the document body");
@@ -563,7 +599,7 @@ mod tests {
         let file = file_store
             .file_map
             .lock()
-            .get("file://filler/")
+            .get("file:///filler/")
             .unwrap()
             .clone();
         assert_eq!(file.rope.to_string(), "Hae is the document body");
@@ -583,7 +619,7 @@ mod tests {
         let file = file_store
             .file_map
             .lock()
-            .get("file://filler/")
+            .get("file:///filler/")
             .unwrap()
             .clone();
         assert_eq!(file.rope.to_string(), "abc");
@@ -693,7 +729,7 @@ The end with a trailing new line
 
         // Test multi-file
         let text_document2 = generate_filler_text_document(
-            Some("file://filler2"),
+            Some("file:///filler2"),
             Some(
                 r#"Document Top2
 Here is a more complicated document
@@ -781,7 +817,7 @@ The end with a trailing new line
         let params = AdditionalFileStoreParams { build_tree: true };
         let file_store = FileStore::new_with_params(file_store_config, config, params)?;
 
-        let uri = "file://filler/test.rs";
+        let uri = "file:///filler/test.rs";
         let text = r#"#[derive(Debug)]
 struct Rectangle {
     width: u32,

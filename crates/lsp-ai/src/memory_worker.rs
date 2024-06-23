@@ -69,8 +69,7 @@ async fn do_build_prompt(
     params
         .tx
         .send(prompt)
-        .map_err(|_| anyhow::anyhow!("sending on channel failed"))?;
-    Ok(())
+        .map_err(|_| anyhow::anyhow!("sending on channel failed"))
 }
 
 fn do_task(
