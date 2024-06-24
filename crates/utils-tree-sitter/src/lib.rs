@@ -15,7 +15,7 @@ fn get_extension_for_language(extension: &str) -> Result<String, GetParserError>
     Ok(match extension {
         "py" => "Python",
         "rs" => "Rust",
-        "zig" => "Zig",
+        // "zig" => "Zig",
         "sh" => "Bash",
         "c" => "C",
         "cpp" => "C++",
@@ -48,8 +48,8 @@ pub fn get_parser_for_extension(extension: &str) -> Result<Parser, GetParserErro
         "Python" => parser.set_language(&tree_sitter_python::language())?,
         #[cfg(any(feature = "all", feature = "rust"))]
         "Rust" => parser.set_language(&tree_sitter_rust::language())?,
-        #[cfg(any(feature = "all", feature = "zig"))]
-        "Zig" => parser.set_language(&tree_sitter_zig::language())?,
+        // #[cfg(any(feature = "all", feature = "zig"))]
+        // "Zig" => parser.set_language(&tree_sitter_zig::language())?,
         #[cfg(any(feature = "all", feature = "bash"))]
         "Bash" => parser.set_language(&tree_sitter_bash::language())?,
         #[cfg(any(feature = "all", feature = "c"))]

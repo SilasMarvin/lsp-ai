@@ -1,8 +1,11 @@
 [package]
 name = "utils-tree-sitter"
 version = "0.1.0"
+description = "Utils for working with splitter-tree-sitter"
 
 edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 thiserror = "1.0.61"
@@ -24,11 +27,11 @@ tree-sitter-lua = { version = "0.1.0", optional = true }
 tree-sitter-ocaml = { version = "0.22.0", optional = true }
 tree-sitter-python = { version = "0.21", optional = true }
 tree-sitter-rust = { version = "0.21", optional = true }
-tree-sitter-zig = { git = "https://github.com/maxxnino/tree-sitter-zig", optional = true }
+# tree-sitter-zig = { git = "https://github.com/maxxnino/tree-sitter-zig", optional = true }
 
 [build-dependencies]
 cc="*"
 
 [features]
 default = []
-all = ["dep:tree-sitter-python", "dep:tree-sitter-bash", "dep:tree-sitter-c", "dep:tree-sitter-cpp", "dep:tree-sitter-c-sharp", "dep:tree-sitter-css", "dep:tree-sitter-elixir", "dep:tree-sitter-erlang", "dep:tree-sitter-go", "dep:tree-sitter-html", "dep:tree-sitter-java", "dep:tree-sitter-javascript", "dep:tree-sitter-json", "dep:tree-sitter-rust", "dep:tree-sitter-zig", "dep:tree-sitter-haskell", "dep:tree-sitter-lua", "dep:tree-sitter-ocaml"]
+all = ["dep:tree-sitter-python", "dep:tree-sitter-bash", "dep:tree-sitter-c", "dep:tree-sitter-cpp", "dep:tree-sitter-c-sharp", "dep:tree-sitter-css", "dep:tree-sitter-elixir", "dep:tree-sitter-erlang", "dep:tree-sitter-go", "dep:tree-sitter-html", "dep:tree-sitter-java", "dep:tree-sitter-javascript", "dep:tree-sitter-json", "dep:tree-sitter-rust", "dep:tree-sitter-haskell", "dep:tree-sitter-lua", "dep:tree-sitter-ocaml"]

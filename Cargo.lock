@@ -3763,7 +3763,6 @@ dependencies = [
  "tree-sitter-ocaml",
  "tree-sitter-python",
  "tree-sitter-rust",
- "tree-sitter-zig",
 ]
 
 [[package]]

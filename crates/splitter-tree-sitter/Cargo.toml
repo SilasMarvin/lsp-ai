@@ -1,8 +1,11 @@
 [package]
 name = "splitter-tree-sitter"
 version = "0.1.0"
+description = "A code splitter utilizing Tree-sitter"
 
 edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 thiserror = "1.0.61"
