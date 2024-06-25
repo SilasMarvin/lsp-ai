@@ -69,10 +69,44 @@ pub struct TextSplitter {
     pub chunk_size: usize,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct EmbeddingPrefix {
+    #[serde(default)]
+    pub storage: String,
+    #[serde(default)]
+    pub retrieval: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OllamaEmbeddingModel {
+    // The generate endpoint, default: 'http://localhost:11434/api/embeddings'
+    pub endpoint: Option<String>,
+    // The model name
+    pub model: String,
+    // The prefix to apply to the embeddings
+    #[serde(default)]
+    pub prefix: EmbeddingPrefix,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum ValidEmbeddingModel {
+    Ollama(OllamaEmbeddingModel),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct VectorStore {
+    pub crawl: Option<Crawl>,
+    #[serde(default)]
+    pub splitter: ValidSplitter,
+    pub embedding_model: ValidEmbeddingModel,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) enum ValidMemoryBackend {
     #[serde(rename = "file_store")]
     FileStore(FileStore),
+    #[serde(rename = "vector_store")]
+    VectorStore(VectorStore),
     #[serde(rename = "postgresml")]
     PostgresML(PostgresML),
 }
