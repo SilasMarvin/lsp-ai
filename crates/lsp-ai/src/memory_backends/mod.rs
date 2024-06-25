@@ -18,13 +18,13 @@ pub enum PromptType {
 #[derive(Clone)]
 pub struct MemoryRunParams {
     pub is_for_chat: bool,
-    pub max_context_length: usize,
+    pub max_context: usize,
 }
 
 impl From<&Value> for MemoryRunParams {
     fn from(value: &Value) -> Self {
         Self {
-            max_context_length: value["max_context_length"].as_u64().unwrap_or(1024) as usize,
+            max_context: value["max_context"].as_u64().unwrap_or(1024) as usize,
             // messages are for most backends, contents are for Gemini
             is_for_chat: value["messages"].is_array() || value["contents"].is_array(),
         }
@@ -113,22 +113,16 @@ pub trait MemoryBackend {
     async fn init(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
-    async fn changed_text_document(
-        &self,
-        params: DidChangeTextDocumentParams,
-    ) -> anyhow::Result<()>;
-    async fn renamed_files(&self, params: RenameFilesParams) -> anyhow::Result<()>;
+    fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
+    fn changed_text_document(&self, params: DidChangeTextDocumentParams) -> anyhow::Result<()>;
+    fn renamed_files(&self, params: RenameFilesParams) -> anyhow::Result<()>;
+    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String>;
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
         params: &Value,
     ) -> anyhow::Result<Prompt>;
-    async fn get_filter_text(
-        &self,
-        position: &TextDocumentPositionParams,
-    ) -> anyhow::Result<String>;
 }
 
 impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
@@ -137,7 +131,7 @@ impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
     fn try_from(configuration: Config) -> Result<Self, Self::Error> {
         match configuration.config.memory.clone() {
             ValidMemoryBackend::FileStore(file_store_config) => Ok(Box::new(
-                file_store::FileStore::new(file_store_config, configuration),
+                file_store::FileStore::new(file_store_config, configuration)?,
             )),
             ValidMemoryBackend::PostgresML(postgresml_config) => Ok(Box::new(
                 postgresml::PostgresML::new(postgresml_config, configuration)?,

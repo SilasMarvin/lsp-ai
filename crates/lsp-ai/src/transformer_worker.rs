@@ -17,7 +17,7 @@ use crate::custom_requests::generation_stream::GenerationStreamParams;
 use crate::memory_backends::Prompt;
 use crate::memory_worker::{self, FilterRequest, PromptRequest};
 use crate::transformer_backends::TransformerBackend;
-use crate::utils::ToResponseError;
+use crate::utils::{ToResponseError, TOKIO_RUNTIME};
 
 #[derive(Clone, Debug)]
 pub struct CompletionRequest {
@@ -89,14 +89,14 @@ pub struct DoGenerationStreamResponse {
 fn post_process_start(response: String, front: &str) -> String {
     let mut front_match = response.len();
     loop {
-        if response.len() == 0 || front.ends_with(&response[..front_match]) {
+        if response.is_empty() || front.ends_with(&response[..front_match]) {
             break;
         } else {
             front_match -= 1;
         }
     }
     if front_match > 0 {
-        (&response[front_match..]).to_owned()
+        response[front_match..].to_owned()
     } else {
         response
     }
@@ -105,16 +105,14 @@ fn post_process_start(response: String, front: &str) -> String {
 fn post_process_end(response: String, back: &str) -> String {
     let mut back_match = 0;
     loop {
-        if back_match == response.len() {
-            break;
-        } else if back.starts_with(&response[back_match..]) {
+        if back_match == response.len() || back.starts_with(&response[back_match..]) {
             break;
         } else {
             back_match += 1;
         }
     }
     if back_match > 0 {
-        (&response[..back_match]).to_owned()
+        response[..back_match].to_owned()
     } else {
         response
     }
@@ -140,12 +138,10 @@ fn post_process_response(
                 } else {
                     response
                 }
+            } else if config.remove_duplicate_start {
+                post_process_start(response, &context_and_code.code)
             } else {
-                if config.remove_duplicate_start {
-                    post_process_start(response, &context_and_code.code)
-                } else {
-                    response
-                }
+                response
             }
         }
         Prompt::FIM(fim) => {
@@ -177,7 +173,7 @@ pub fn run(
         connection,
         config,
     ) {
-        error!("error in transformer worker: {e}")
+        error!("error in transformer worker: {e:?}")
     }
 }
 
@@ -189,10 +185,6 @@ fn do_run(
     config: Config,
 ) -> anyhow::Result<()> {
     let transformer_backends = Arc::new(transformer_backends);
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4)
-        .enable_all()
-        .build()?;
 
     // If they have disabled completions, this function will fail. We set it to MIN_POSITIVE to never process a completions request
     let max_requests_per_second = config
@@ -206,7 +198,7 @@ fn do_run(
         let task_transformer_backends = transformer_backends.clone();
         let task_memory_backend_tx = memory_backend_tx.clone();
         let task_config = config.clone();
-        runtime.spawn(async move {
+        TOKIO_RUNTIME.spawn(async move {
             dispatch_request(
                 request,
                 task_connection,
@@ -264,7 +256,7 @@ async fn dispatch_request(
     {
         Ok(response) => response,
         Err(e) => {
-            error!("generating response: {e}");
+            error!("generating response: {e:?}");
             Response {
                 id: request.get_id(),
                 result: None,
@@ -274,7 +266,7 @@ async fn dispatch_request(
     };
 
     if let Err(e) = connection.sender.send(Message::Response(response)) {
-        error!("sending response: {e}");
+        error!("sending response: {e:?}");
     }
 }
 
@@ -293,14 +285,12 @@ async fn generate_response(
                 .context("Completions is none")?;
             let transformer_backend = transformer_backends
                 .get(&completion_config.model)
-                .clone()
                 .with_context(|| format!("can't find model: {}", &completion_config.model))?;
             do_completion(transformer_backend, memory_backend_tx, &request, &config).await
         }
         WorkerRequest::Generation(request) => {
             let transformer_backend = transformer_backends
                 .get(&request.params.model)
-                .clone()
                 .with_context(|| format!("can't find model: {}", &request.params.model))?;
             do_generate(transformer_backend, memory_backend_tx, &request).await
         }
@@ -346,7 +336,6 @@ async fn do_completion(
 
     // Get the response
     let mut response = transformer_backend.do_completion(&prompt, params).await?;
-    eprintln!("\n\n\n\nGOT RESPONSE: {}\n\n\n\n", response.insert_text);
 
     if let Some(post_process) = config.get_completions_post_process() {
         response.insert_text = post_process_response(response.insert_text, &prompt, &post_process);
@@ -423,7 +412,103 @@ async fn do_generate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory_backends::{ContextAndCodePrompt, FIMPrompt};
+    use crate::memory_backends::{
+        file_store::FileStore, ContextAndCodePrompt, FIMPrompt, MemoryBackend,
+    };
+    use serde_json::json;
+    use std::{sync::mpsc, thread};
+
+    #[tokio::test]
+    async fn test_do_completion() -> anyhow::Result<()> {
+        let (memory_tx, memory_rx) = mpsc::channel();
+        let memory_backend: Box<dyn MemoryBackend + Send + Sync> =
+            Box::new(FileStore::default_with_filler_file()?);
+        thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
+
+        let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
+            config::ValidModel::Ollama(serde_json::from_value(
+                json!({"model": "deepseek-coder:1.3b-base"}),
+            )?)
+            .try_into()?;
+        let completion_request = CompletionRequest::new(
+            serde_json::from_value(json!(0))?,
+            serde_json::from_value(json!({
+                "position": {"character":10, "line":2},
+                "textDocument": {
+                    "uri": "file:///filler.py"
+                }
+            }))?,
+        );
+        let mut config = config::Config::default_with_file_store_without_models();
+        config.config.completion = Some(serde_json::from_value(json!({
+            "model": "model1",
+            "parameters": {
+                "options": {
+                    "temperature": 0
+                }
+            }
+        }))?);
+
+        let result = do_completion(
+            &transformer_backend,
+            memory_tx,
+            &completion_request,
+            &config,
+        )
+        .await?;
+
+        assert_eq!(
+            " x * y",
+            result.result.clone().unwrap()["items"][0]["textEdit"]["newText"]
+                .as_str()
+                .unwrap()
+        );
+        assert_eq!(
+            "    return",
+            result.result.unwrap()["items"][0]["filterText"]
+                .as_str()
+                .unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_do_generate() -> anyhow::Result<()> {
+        let (memory_tx, memory_rx) = mpsc::channel();
+        let memory_backend: Box<dyn MemoryBackend + Send + Sync> =
+            Box::new(FileStore::default_with_filler_file()?);
+        thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
+
+        let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
+            config::ValidModel::Ollama(serde_json::from_value(
+                json!({"model": "deepseek-coder:1.3b-base"}),
+            )?)
+            .try_into()?;
+        let generation_request = GenerationRequest::new(
+            serde_json::from_value(json!(0))?,
+            serde_json::from_value(json!({
+                "position": {"character":10, "line":2},
+                "textDocument": {
+                    "uri": "file:///filler.py"
+                },
+                "model": "model1",
+                "parameters": {
+                    "options": {
+                        "temperature": 0
+                    }
+                }
+            }))?,
+        );
+        let result = do_generate(&transformer_backend, memory_tx, &generation_request).await?;
+
+        assert_eq!(
+            " x * y",
+            result.result.unwrap()["generatedText"].as_str().unwrap()
+        );
+
+        Ok(())
+    }
 
     #[test]
     fn test_post_process_fim() {

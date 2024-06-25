@@ -14,9 +14,11 @@ use tracing::error;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 mod config;
+mod crawl;
 mod custom_requests;
 mod memory_backends;
 mod memory_worker;
+mod splitters;
 #[cfg(feature = "llama_cpp")]
 mod template;
 mod transformer_backends;
@@ -50,15 +52,19 @@ where
     req.extract(R::METHOD)
 }
 
-fn main() -> Result<()> {
-    // Builds a tracing subscriber from the `LSP_AI_LOG` environment variable
-    // If the variables value is malformed or missing, sets the default log level to ERROR
+// Builds a tracing subscriber from the `LSP_AI_LOG` environment variable
+// If the variables value is malformed or missing, sets the default log level to ERROR
+fn init_logger() {
     FmtSubscriber::builder()
         .with_writer(std::io::stderr)
         .with_ansi(false)
         .without_time()
         .with_env_filter(EnvFilter::from_env("LSP_AI_LOG"))
         .init();
+}
+
+fn main() -> Result<()> {
+    init_logger();
 
     let (connection, io_threads) = Connection::stdio();
     let server_capabilities = serde_json::to_value(ServerCapabilities {
@@ -83,7 +89,6 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     let connection = Arc::new(connection);
 
     // Our channel we use to communicate with our transformer worker
-    // let last_worker_request = Arc::new(Mutex::new(None));
     let (transformer_tx, transformer_rx) = mpsc::channel();
 
     // The channel we use to communicate with our memory worker
@@ -94,8 +99,6 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
 
     // Setup our transformer worker
-    // let transformer_backend: Box<dyn TransformerBackend + Send + Sync> =
-    //     config.clone().try_into()?;
     let transformer_backends: HashMap<String, Box<dyn TransformerBackend + Send + Sync>> = config
         .config
         .models

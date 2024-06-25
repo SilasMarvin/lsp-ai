@@ -25,6 +25,51 @@ impl Default for PostProcess {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub enum ValidSplitter {
+    #[serde(rename = "tree_sitter")]
+    TreeSitter(TreeSitter),
+    #[serde(rename = "text_sitter")]
+    TextSplitter(TextSplitter),
+}
+
+impl Default for ValidSplitter {
+    fn default() -> Self {
+        ValidSplitter::TreeSitter(TreeSitter::default())
+    }
+}
+
+const fn chunk_size_default() -> usize {
+    1500
+}
+
+const fn chunk_overlap_default() -> usize {
+    0
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TreeSitter {
+    #[serde(default = "chunk_size_default")]
+    pub chunk_size: usize,
+    #[serde(default = "chunk_overlap_default")]
+    pub chunk_overlap: usize,
+}
+
+impl Default for TreeSitter {
+    fn default() -> Self {
+        Self {
+            chunk_size: 1500,
+            chunk_overlap: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TextSplitter {
+    #[serde(default = "chunk_size_default")]
+    pub chunk_size: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub enum ValidMemoryBackend {
     #[serde(rename = "file_store")]
     FileStore(FileStore),
@@ -67,15 +112,6 @@ impl ChatMessage {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Chat {
-    pub completion: Option<Vec<ChatMessage>>,
-    pub generation: Option<Vec<ChatMessage>>,
-    pub chat_template: Option<String>,
-    pub chat_format: Option<String>,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 #[allow(clippy::upper_case_acronyms)]
 #[serde(deny_unknown_fields)]
@@ -85,27 +121,52 @@ pub struct FIM {
     pub end: String,
 }
 
+const fn max_crawl_memory_default() -> u64 {
+    100_000_000
+}
+
+const fn max_crawl_file_size_default() -> u64 {
+    10_000_000
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Crawl {
+    #[serde(default = "max_crawl_file_size_default")]
+    pub max_file_size: u64,
+    #[serde(default = "max_crawl_memory_default")]
+    pub max_crawl_memory: u64,
+    #[serde(default)]
+    pub all_files: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PostgresMLEmbeddingModel {
+    pub model: String,
+    pub embed_parameters: Option<Value>,
+    pub query_parameters: Option<Value>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PostgresML {
     pub database_url: Option<String>,
+    pub crawl: Option<Crawl>,
     #[serde(default)]
-    pub crawl: bool,
+    pub splitter: ValidSplitter,
+    pub embedding_model: Option<PostgresMLEmbeddingModel>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct FileStore {
-    #[serde(default)]
-    pub crawl: bool,
+    pub crawl: Option<Crawl>,
 }
 
-const fn n_gpu_layers_default() -> u32 {
-    1000
-}
-
-const fn n_ctx_default() -> u32 {
-    1000
+impl FileStore {
+    pub fn new_without_crawl() -> Self {
+        Self { crawl: None }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -137,6 +198,17 @@ pub struct MistralFIM {
     pub max_requests_per_second: f32,
 }
 
+#[cfg(feature = "llama_cpp")]
+const fn n_gpu_layers_default() -> u32 {
+    1000
+}
+
+#[cfg(feature = "llama_cpp")]
+const fn n_ctx_default() -> u32 {
+    1000
+}
+
+#[cfg(feature = "llama_cpp")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LLaMACPP {
@@ -230,15 +302,14 @@ pub struct ValidConfig {
 
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct ValidClientParams {
-    #[serde(alias = "rootURI")]
-    _root_uri: Option<String>,
-    _workspace_folders: Option<Vec<String>>,
+    #[serde(alias = "rootUri")]
+    pub root_uri: Option<String>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub config: ValidConfig,
-    _client_params: ValidClientParams,
+    pub client_params: ValidClientParams,
 }
 
 impl Config {
@@ -255,7 +326,7 @@ impl Config {
         let client_params: ValidClientParams = serde_json::from_value(args)?;
         Ok(Self {
             config: valid_args,
-            _client_params: client_params,
+            client_params,
         })
     }
 
@@ -300,20 +371,17 @@ impl Config {
     }
 }
 
-// This makes testing much easier.
+// For teesting use only
 #[cfg(test)]
 impl Config {
     pub fn default_with_file_store_without_models() -> Self {
         Self {
             config: ValidConfig {
-                memory: ValidMemoryBackend::FileStore(FileStore { crawl: false }),
+                memory: ValidMemoryBackend::FileStore(FileStore { crawl: None }),
                 models: HashMap::new(),
                 completion: None,
             },
-            _client_params: ValidClientParams {
-                _root_uri: None,
-                _workspace_folders: None,
-            },
+            client_params: ValidClientParams { root_uri: None },
         }
     }
 }
