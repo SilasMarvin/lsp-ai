@@ -89,7 +89,7 @@ jobs:
     name: dist (x86_64-unknown-linux-musl)
     runs-on: ubuntu-latest
     env:
-      LLM_LS_TARGET: x86_64-unknown-linux-musl
+      LSP_AI_TARGET: x86_64-unknown-linux-musl
       # For some reason `-crt-static` is not working for clang without lld
       RUSTFLAGS: "-C link-arg=-fuse-ld=lld -C target-feature=-crt-static"
     container:
@@ -99,7 +99,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: apk add --no-cache git clang clang-dev lld musl-dev nodejs npm openssl-dev pkgconfig g++ openssl-dev perl make linux-headers gcc
+        run: apk add --no-cache git clang lld musl-dev nodejs npm openssl-dev pkgconfig g++ openssl-dev perl make linux-headers
 
       - name: Checkout repository
         uses: actions/checkout@v4
