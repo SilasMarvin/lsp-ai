@@ -16,8 +16,8 @@ use super::TransformerBackend;
 
 // NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
 #[derive(Debug, Deserialize)]
-pub struct OllamaRunParams {
-    pub fim: Option<FIM>,
+pub(crate) struct OllamaRunParams {
+    pub(crate) fim: Option<FIM>,
     messages: Option<Vec<ChatMessage>>,
     #[serde(default)]
     options: HashMap<String, Value>,
@@ -26,7 +26,7 @@ pub struct OllamaRunParams {
     keep_alive: Option<String>,
 }
 
-pub struct Ollama {
+pub(crate) struct Ollama {
     configuration: config::Ollama,
 }
 

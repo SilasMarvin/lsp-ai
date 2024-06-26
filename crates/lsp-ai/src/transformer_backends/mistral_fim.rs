@@ -26,25 +26,25 @@ const fn temperature_default() -> f32 {
 
 // NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
 #[derive(Debug, Deserialize)]
-pub struct MistralFIMRunParams {
+pub(crate) struct MistralFIMRunParams {
     #[serde(default = "max_tokens_default")]
-    pub max_tokens: usize,
+    pub(crate) max_tokens: usize,
     #[serde(default = "top_p_default")]
-    pub top_p: f32,
+    pub(crate) top_p: f32,
     #[serde(default = "temperature_default")]
-    pub temperature: f32,
-    pub min_tokens: Option<u64>,
-    pub random_seed: Option<u64>,
+    pub(crate) temperature: f32,
+    pub(crate) min_tokens: Option<u64>,
+    pub(crate) random_seed: Option<u64>,
     #[serde(default)]
-    pub stop: Vec<String>,
+    pub(crate) stop: Vec<String>,
 }
 
-pub struct MistralFIM {
+pub(crate) struct MistralFIM {
     config: config::MistralFIM,
 }
 
 impl MistralFIM {
-    pub fn new(config: config::MistralFIM) -> Self {
+    pub(crate) fn new(config: config::MistralFIM) -> Self {
         Self { config }
     }
 

@@ -38,22 +38,22 @@ const fn temperature_default() -> f32 {
 
 // NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
 #[derive(Debug, Deserialize)]
-pub struct OpenAIRunParams {
-    pub fim: Option<FIM>,
+pub(crate) struct OpenAIRunParams {
+    pub(crate) fim: Option<FIM>,
     messages: Option<Vec<ChatMessage>>,
     #[serde(default = "max_tokens_default")]
-    pub max_tokens: usize,
+    pub(crate) max_tokens: usize,
     #[serde(default = "top_p_default")]
-    pub top_p: f32,
+    pub(crate) top_p: f32,
     #[serde(default = "presence_penalty_default")]
-    pub presence_penalty: f32,
+    pub(crate) presence_penalty: f32,
     #[serde(default = "frequency_penalty_default")]
-    pub frequency_penalty: f32,
+    pub(crate) frequency_penalty: f32,
     #[serde(default = "temperature_default")]
-    pub temperature: f32,
+    pub(crate) temperature: f32,
 }
 
-pub struct OpenAI {
+pub(crate) struct OpenAI {
     configuration: config::OpenAI,
 }
 
@@ -68,27 +68,27 @@ struct OpenAICompletionsResponse {
     error: Option<Value>,
     #[serde(default)]
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub(crate) other: HashMap<String, Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct OpenAIChatMessage {
-    pub role: String,
-    pub content: String,
+pub(crate) struct OpenAIChatMessage {
+    pub(crate) role: String,
+    pub(crate) content: String,
 }
 
 #[derive(Deserialize)]
-pub struct OpenAIChatChoices {
-    pub message: OpenAIChatMessage,
+pub(crate) struct OpenAIChatChoices {
+    pub(crate) message: OpenAIChatMessage,
 }
 
 #[derive(Deserialize)]
-pub struct OpenAIChatResponse {
-    pub choices: Option<Vec<OpenAIChatChoices>>,
-    pub error: Option<Value>,
+pub(crate) struct OpenAIChatResponse {
+    pub(crate) choices: Option<Vec<OpenAIChatChoices>>,
+    pub(crate) error: Option<Value>,
     #[serde(default)]
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub(crate) other: HashMap<String, Value>,
 }
 
 impl OpenAI {
