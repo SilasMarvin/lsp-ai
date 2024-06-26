@@ -250,15 +250,14 @@ impl PostgresML {
                     let documents: Vec<pgml::types::Json> = chunks
                         .into_iter()
                         .zip(&file_uris)
-                        .map(|(chunks, uri)| {
+                        .flat_map(|(chunks, uri)| {
                             chunks
                                 .into_iter()
                                 .map(|chunk| {
-                                    chunk_to_document(&uri, chunk, task_root_uri.as_deref())
+                                    chunk_to_document(uri, chunk, task_root_uri.as_deref())
                                 })
                                 .collect::<Vec<Value>>()
                         })
-                        .flatten()
                         .map(|f: Value| f.into())
                         .collect();
                     if let Err(e) = task_collection
@@ -360,15 +359,11 @@ impl PostgresML {
                 current_chunks_bytes += contents.len();
                 let chunks: Vec<pgml::types::Json> = self
                     .splitter
-                    .split_file_contents(&uri, &contents)
+                    .split_file_contents(uri, &contents)
                     .into_iter()
                     .map(|chunk| {
-                        chunk_to_document(
-                            &uri,
-                            chunk,
-                            self.config.client_params.root_uri.as_deref(),
-                        )
-                        .into()
+                        chunk_to_document(uri, chunk, self.config.client_params.root_uri.as_deref())
+                            .into()
                     })
                     .collect();
                 chunks_to_upsert.extend(chunks);
@@ -384,7 +379,7 @@ impl PostgresML {
             }
         }
         // Upsert any remaining chunks
-        if chunks_to_upsert.len() > 0 {
+        if chunks_to_upsert.is_empty() {
             collection
                 .upsert_documents(chunks_to_upsert, None)
                 .await
@@ -474,7 +469,7 @@ impl PostgresML {
                     Ok(true)
                 })?;
             // Upsert any remaining documents
-            if documents.len() > 0 {
+            if documents.is_empty() {
                 let mut collection = self.collection.clone();
                 TOKIO_RUNTIME.spawn(async move {
                     if let Err(e) = collection
@@ -505,7 +500,7 @@ impl MemoryBackend for PostgresML {
         prompt_type: PromptType,
         params: &Value,
     ) -> anyhow::Result<Prompt> {
-        let params: MemoryRunParams = params.try_into()?;
+        let params: MemoryRunParams = params.into();
         let chunk_size = self.splitter.chunk_size();
         let total_allowed_characters = tokens_to_estimated_characters(params.max_context);
 
@@ -530,8 +525,7 @@ impl MemoryBackend for PostgresML {
             .postgresml_config
             .embedding_model
             .as_ref()
-            .map(|m| m.query_parameters.clone())
-            .flatten()
+            .and_then(|m| m.query_parameters.clone())
         {
             Some(query_parameters) => query_parameters,
             None => json!({
@@ -597,7 +591,7 @@ impl MemoryBackend for PostgresML {
                 Prompt::ContextAndCode(ContextAndCodePrompt::new(
                     context.to_owned(),
                     format_file_excerpt(
-                        &position.text_document.uri.to_string(),
+                        position.text_document.uri.as_str(),
                         &context_and_code.code,
                         self.config.client_params.root_uri.as_deref(),
                     ),

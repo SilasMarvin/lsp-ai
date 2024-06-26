@@ -328,7 +328,7 @@ impl MemoryBackend for FileStore {
         prompt_type: PromptType,
         params: &Value,
     ) -> anyhow::Result<Prompt> {
-        let params: MemoryRunParams = params.try_into()?;
+        let params: MemoryRunParams = params.into();
         self.build_code(position, prompt_type, params, true)
     }
 
