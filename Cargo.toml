@@ -1,7 +1,5 @@
 [workspace]
-members = [
-    "crates/*",
-]
+members = ["crates/*", "xtask/"]
 resolver = "2"
 
 [workspace.package]
@@ -10,3 +8,13 @@ license = "MIT"
 description = "LSP-AI is an open-source language server that serves as a backend for AI-powered functionality, designed to assist and empower software engineers, not replace them."
 repository = "https://github.com/SilasMarvin/lsp-ai"
 readme = "README.md"
+authors = ["Silvas Marvin <>"]
+
+[profile.dev.package]
+# This speeds up `cargo xtask dist`.
+miniz_oxide.opt-level = 3
+
+[profile.release]
+incremental = true
+# Set this to 1 or 2 to get more useful backtraces in debugger.
+debug = 0
