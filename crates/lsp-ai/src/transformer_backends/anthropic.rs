@@ -30,15 +30,15 @@ const fn temperature_default() -> f32 {
 
 // NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
 #[derive(Debug, Deserialize)]
-pub struct AnthropicRunParams {
+pub(crate) struct AnthropicRunParams {
     system: String,
     messages: Vec<ChatMessage>,
     #[serde(default = "max_tokens_default")]
-    pub max_tokens: usize,
+    pub(crate) max_tokens: usize,
     #[serde(default = "top_p_default")]
-    pub top_p: f32,
+    pub(crate) top_p: f32,
     #[serde(default = "temperature_default")]
-    pub temperature: f32,
+    pub(crate) temperature: f32,
 }
 
 pub struct Anthropic {
@@ -56,11 +56,11 @@ struct AnthropicChatResponse {
     error: Option<Value>,
     #[serde(default)]
     #[serde(flatten)]
-    pub other: HashMap<String, Value>,
+    pub(crate) other: HashMap<String, Value>,
 }
 
 impl Anthropic {
-    pub fn new(config: config::Anthropic) -> Self {
+    pub(crate) fn new(config: config::Anthropic) -> Self {
         Self { config }
     }
 

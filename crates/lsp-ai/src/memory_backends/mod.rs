@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::config::{Config, ValidMemoryBackend};
 
-pub mod file_store;
+pub(crate) mod file_store;
 mod postgresml;
 
 #[derive(Clone, Debug)]
@@ -16,9 +16,9 @@ pub enum PromptType {
 }
 
 #[derive(Clone)]
-pub struct MemoryRunParams {
-    pub is_for_chat: bool,
-    pub max_context: usize,
+pub(crate) struct MemoryRunParams {
+    pub(crate) is_for_chat: bool,
+    pub(crate) max_context: usize,
 }
 
 impl From<&Value> for MemoryRunParams {

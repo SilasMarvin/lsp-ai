@@ -39,7 +39,7 @@ const fn max_tokens_default() -> usize {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Part {
-    pub text: String,
+    pub(crate) text: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -13,7 +13,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct PromptRequest {
+pub(crate) struct PromptRequest {
     position: TextDocumentPositionParams,
     prompt_type: PromptType,
     params: Value,
@@ -21,7 +21,7 @@ pub struct PromptRequest {
 }
 
 impl PromptRequest {
-    pub fn new(
+    pub(crate) fn new(
         position: TextDocumentPositionParams,
         prompt_type: PromptType,
         params: Value,
@@ -37,13 +37,13 @@ impl PromptRequest {
 }
 
 #[derive(Debug)]
-pub struct FilterRequest {
+pub(crate) struct FilterRequest {
     position: TextDocumentPositionParams,
     tx: tokio::sync::oneshot::Sender<String>,
 }
 
 impl FilterRequest {
-    pub fn new(
+    pub(crate) fn new(
         position: TextDocumentPositionParams,
         tx: tokio::sync::oneshot::Sender<String>,
     ) -> Self {
@@ -51,7 +51,7 @@ impl FilterRequest {
     }
 }
 
-pub enum WorkerRequest {
+pub(crate) enum WorkerRequest {
     FilterText(FilterRequest),
     Prompt(PromptRequest),
     DidOpenTextDocument(DidOpenTextDocumentParams),
@@ -115,7 +115,7 @@ fn do_run(
     }
 }
 
-pub fn run(
+pub(crate) fn run(
     memory_backend: Box<dyn MemoryBackend + Send + Sync>,
     rx: std::sync::mpsc::Receiver<WorkerRequest>,
 ) {

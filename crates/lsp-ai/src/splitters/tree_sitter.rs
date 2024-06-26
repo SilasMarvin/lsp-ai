@@ -6,14 +6,14 @@ use crate::{config, memory_backends::file_store::File, utils::parse_tree};
 
 use super::{text_splitter::TextSplitter, ByteRange, Chunk, Splitter};
 
-pub struct TreeSitter {
+pub(crate) struct TreeSitter {
     chunk_size: usize,
     splitter: TreeSitterCodeSplitter,
     text_splitter: TextSplitter,
 }
 
 impl TreeSitter {
-    pub fn new(config: config::TreeSitter) -> anyhow::Result<Self> {
+    pub(crate) fn new(config: config::TreeSitter) -> anyhow::Result<Self> {
         let text_splitter = TextSplitter::new_with_chunk_size(config.chunk_size);
         Ok(Self {
             chunk_size: config.chunk_size,
