@@ -2,7 +2,7 @@ use crate::{config, memory_backends::file_store::File};
 
 use super::{ByteRange, Chunk, Splitter};
 
-pub struct TextSplitter {
+pub(crate) struct TextSplitter {
     chunk_size: usize,
     splitter: text_splitter::TextSplitter<text_splitter::Characters>,
 }

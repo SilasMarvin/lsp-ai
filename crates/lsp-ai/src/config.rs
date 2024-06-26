@@ -70,7 +70,7 @@ pub struct TextSplitter {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub enum ValidMemoryBackend {
+pub(crate) enum ValidMemoryBackend {
     #[serde(rename = "file_store")]
     FileStore(FileStore),
     #[serde(rename = "postgresml")]
@@ -141,10 +141,10 @@ pub(crate) struct Crawl {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct PostgresMLEmbeddingModel {
-    pub model: String,
-    pub embed_parameters: Option<Value>,
-    pub query_parameters: Option<Value>,
+pub(crate) struct PostgresMLEmbeddingModel {
+    pub(crate) model: String,
+    pub(crate) embed_parameters: Option<Value>,
+    pub(crate) query_parameters: Option<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -164,38 +164,38 @@ pub(crate) struct FileStore {
 }
 
 impl FileStore {
-    pub fn new_without_crawl() -> Self {
+    pub(crate) fn new_without_crawl() -> Self {
         Self { crawl: None }
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Ollama {
+pub(crate) struct Ollama {
     // The generate endpoint, default: 'http://localhost:11434/api/generate'
-    pub generate_endpoint: Option<String>,
+    pub(crate) generate_endpoint: Option<String>,
     // The chat endpoint, default: 'http://localhost:11434/api/chat'
-    pub chat_endpoint: Option<String>,
+    pub(crate) chat_endpoint: Option<String>,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MistralFIM {
+pub(crate) struct MistralFIM {
     // The auth token env var name
-    pub auth_token_env_var_name: Option<String>,
-    pub auth_token: Option<String>,
+    pub(crate) auth_token_env_var_name: Option<String>,
+    pub(crate) auth_token: Option<String>,
     // The fim endpoint
-    pub fim_endpoint: Option<String>,
+    pub(crate) fim_endpoint: Option<String>,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
 }
 
 #[cfg(feature = "llama_cpp")]
@@ -229,82 +229,83 @@ pub struct LLaMACPP {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct OpenAI {
+pub(crate) struct OpenAI {
     // The auth token env var name
-    pub auth_token_env_var_name: Option<String>,
+    pub(crate) auth_token_env_var_name: Option<String>,
     // The auth token
-    pub auth_token: Option<String>,
+    pub(crate) auth_token: Option<String>,
     // The completions endpoint
-    pub completions_endpoint: Option<String>,
+    pub(crate) completions_endpoint: Option<String>,
     // The chat endpoint
-    pub chat_endpoint: Option<String>,
+    pub(crate) chat_endpoint: Option<String>,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Gemini {
+pub(crate) struct Gemini {
     // The auth token env var name
-    pub auth_token_env_var_name: Option<String>,
+    pub(crate) auth_token_env_var_name: Option<String>,
     // The auth token
-    pub auth_token: Option<String>,
+    pub(crate) auth_token: Option<String>,
     // The completions endpoint
-    pub completions_endpoint: Option<String>,
+    #[allow(dead_code)]
+    pub(crate) completions_endpoint: Option<String>,
     // The chat endpoint
-    pub chat_endpoint: Option<String>,
+    pub(crate) chat_endpoint: Option<String>,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Anthropic {
     // The auth token env var name
-    pub auth_token_env_var_name: Option<String>,
-    pub auth_token: Option<String>,
+    pub(crate) auth_token_env_var_name: Option<String>,
+    pub(crate) auth_token: Option<String>,
     // The completions endpoint
     #[allow(dead_code)]
-    pub completions_endpoint: Option<String>,
+    pub(crate) completions_endpoint: Option<String>,
     // The chat endpoint
-    pub chat_endpoint: Option<String>,
+    pub(crate) chat_endpoint: Option<String>,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Completion {
+pub(crate) struct Completion {
     // The model key to use
-    pub model: String,
+    pub(crate) model: String,
     // Args are deserialized by the backend using them
     #[serde(default)]
-    pub parameters: Kwargs,
+    pub(crate) parameters: Kwargs,
     // Parameters for post processing
     #[serde(default)]
-    pub post_process: PostProcess,
+    pub(crate) post_process: PostProcess,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ValidConfig {
+pub(crate) struct ValidConfig {
     pub(crate) memory: ValidMemoryBackend,
-    pub models: HashMap<String, ValidModel>,
-    pub completion: Option<Completion>,
+    pub(crate) models: HashMap<String, ValidModel>,
+    pub(crate) completion: Option<Completion>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
-pub struct ValidClientParams {
+pub(crate) struct ValidClientParams {
     #[serde(alias = "rootUri")]
-    pub root_uri: Option<String>,
+    pub(crate) root_uri: Option<String>,
 }
 
 #[derive(Clone, Debug)]

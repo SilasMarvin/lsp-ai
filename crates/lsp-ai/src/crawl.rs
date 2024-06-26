@@ -4,7 +4,7 @@ use tracing::{error, instrument};
 
 use crate::config::{self, Config};
 
-pub struct Crawl {
+pub(crate) struct Crawl {
     crawl_config: config::Crawl,
     config: Config,
     crawled_file_types: HashSet<String>,

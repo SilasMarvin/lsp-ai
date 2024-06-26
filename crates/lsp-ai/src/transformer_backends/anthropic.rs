@@ -41,7 +41,7 @@ pub(crate) struct AnthropicRunParams {
     pub(crate) temperature: f32,
 }
 
-pub struct Anthropic {
+pub(crate) struct Anthropic {
     config: config::Anthropic,
 }
 
