@@ -65,6 +65,6 @@ pub fn parse_tree(uri: &str, contents: &str, old_tree: Option<&Tree>) -> anyhow:
     let extension = extension.as_deref().unwrap_or("");
     let mut parser = utils_tree_sitter::get_parser_for_extension(extension)?;
     parser
-        .parse(&contents, old_tree)
+        .parse(contents, old_tree)
         .with_context(|| format!("parsing tree failed for {uri}"))
 }
