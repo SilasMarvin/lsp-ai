@@ -1581,6 +1581,7 @@ dependencies = [
  "serde_json",
  "splitter-tree-sitter",
  "text-splitter",
+ "thiserror",
  "tokenizers",
  "tokio",
  "tracing",
