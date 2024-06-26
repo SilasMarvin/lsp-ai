@@ -8,7 +8,7 @@ license = "MIT"
 description = "LSP-AI is an open-source language server that serves as a backend for AI-powered functionality, designed to assist and empower software engineers, not replace them."
 repository = "https://github.com/SilasMarvin/lsp-ai"
 readme = "README.md"
-authors = ["Silvas Marvin <>"]
+authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
 [profile.dev.package]
 # This speeds up `cargo xtask dist`.
