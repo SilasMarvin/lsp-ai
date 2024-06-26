@@ -84,7 +84,7 @@ async fn split_and_upsert_file(
 }
 
 #[derive(Clone)]
-pub struct PostgresML {
+pub(crate) struct PostgresML {
     config: Config,
     postgresml_config: config::PostgresML,
     file_store: Arc<FileStore>,
@@ -240,12 +240,7 @@ impl PostgresML {
                         })
                         .collect();
                     if let Err(e) = task_collection
-                        .delete_documents(
-                            json!({
-                                "$or": delete_or_statements
-                            })
-                            .into(),
-                        )
+                        .delete_documents(json!({ "$or": delete_or_statements }).into())
                         .await
                         .context("PGML - error deleting documents")
                     {

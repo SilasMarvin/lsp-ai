@@ -4,28 +4,28 @@ use serde_json::Value;
 
 use crate::config;
 
-pub enum Generation {}
+pub(crate) enum Generation {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GenerationParams {
+pub(crate) struct GenerationParams {
     // This field was "mixed-in" from TextDocumentPositionParams
     #[serde(flatten)]
-    pub text_document_position: TextDocumentPositionParams,
+    pub(crate) text_document_position: TextDocumentPositionParams,
     // The model key to use
-    pub model: String,
+    pub(crate) model: String,
     #[serde(default)]
     // Args are deserialized by the backend using them
-    pub parameters: Value,
+    pub(crate) parameters: Value,
     // Parameters for post processing
     #[serde(default)]
-    pub post_process: config::PostProcess,
+    pub(crate) post_process: config::PostProcess,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GenerateResult {
-    pub generated_text: String,
+pub(crate) struct GenerateResult {
+    pub(crate) generated_text: String,
 }
 
 impl lsp_types::request::Request for Generation {

@@ -8,14 +8,14 @@ pub struct TextSplitter {
 }
 
 impl TextSplitter {
-    pub fn new(config: config::TextSplitter) -> Self {
+    pub(crate) fn new(config: config::TextSplitter) -> Self {
         Self {
             chunk_size: config.chunk_size,
             splitter: text_splitter::TextSplitter::new(config.chunk_size),
         }
     }
 
-    pub fn new_with_chunk_size(chunk_size: usize) -> Self {
+    pub(crate) fn new_with_chunk_size(chunk_size: usize) -> Self {
         Self {
             chunk_size,
             splitter: text_splitter::TextSplitter::new(chunk_size),

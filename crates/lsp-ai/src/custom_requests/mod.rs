@@ -1,2 +1,2 @@
-pub mod generation;
-pub mod generation_stream;
+pub(crate) mod generation;
+pub(crate) mod generation_stream;

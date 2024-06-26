@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub type Kwargs = HashMap<String, Value>;
+pub(crate) type Kwargs = HashMap<String, Value>;
 
 const fn max_requests_per_second_default() -> f32 {
     1.
@@ -79,7 +79,7 @@ pub enum ValidMemoryBackend {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
-pub enum ValidModel {
+pub(crate) enum ValidModel {
     #[cfg(feature = "llama_cpp")]
     #[serde(rename = "llama_cpp")]
     LLaMACPP(LLaMACPP),
@@ -97,13 +97,13 @@ pub enum ValidModel {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
+pub(crate) struct ChatMessage {
+    pub(crate) role: String,
+    pub(crate) content: String,
 }
 
 impl ChatMessage {
-    pub fn new(role: String, content: String) -> Self {
+    pub(crate) fn new(role: String, content: String) -> Self {
         Self {
             role,
             content,
@@ -115,10 +115,10 @@ impl ChatMessage {
 #[derive(Clone, Debug, Deserialize)]
 #[allow(clippy::upper_case_acronyms)]
 #[serde(deny_unknown_fields)]
-pub struct FIM {
-    pub start: String,
-    pub middle: String,
-    pub end: String,
+pub(crate) struct FIM {
+    pub(crate) start: String,
+    pub(crate) middle: String,
+    pub(crate) end: String,
 }
 
 const fn max_crawl_memory_default() -> u64 {
@@ -131,13 +131,13 @@ const fn max_crawl_file_size_default() -> u64 {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Crawl {
+pub(crate) struct Crawl {
     #[serde(default = "max_crawl_file_size_default")]
-    pub max_file_size: u64,
+    pub(crate) max_file_size: u64,
     #[serde(default = "max_crawl_memory_default")]
-    pub max_crawl_memory: u64,
+    pub(crate) max_crawl_memory: u64,
     #[serde(default)]
-    pub all_files: bool,
+    pub(crate) all_files: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -149,18 +149,18 @@ pub struct PostgresMLEmbeddingModel {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PostgresML {
-    pub database_url: Option<String>,
-    pub crawl: Option<Crawl>,
+pub(crate) struct PostgresML {
+    pub(crate) database_url: Option<String>,
+    pub(crate) crawl: Option<Crawl>,
     #[serde(default)]
-    pub splitter: ValidSplitter,
-    pub embedding_model: Option<PostgresMLEmbeddingModel>,
+    pub(crate) splitter: ValidSplitter,
+    pub(crate) embedding_model: Option<PostgresMLEmbeddingModel>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub struct FileStore {
-    pub crawl: Option<Crawl>,
+pub(crate) struct FileStore {
+    pub(crate) crawl: Option<Crawl>,
 }
 
 impl FileStore {
@@ -265,11 +265,12 @@ pub struct Gemini {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Anthropic {
+pub(crate) struct Anthropic {
     // The auth token env var name
     pub auth_token_env_var_name: Option<String>,
     pub auth_token: Option<String>,
     // The completions endpoint
+    #[allow(dead_code)]
     pub completions_endpoint: Option<String>,
     // The chat endpoint
     pub chat_endpoint: Option<String>,
@@ -295,7 +296,7 @@ pub struct Completion {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValidConfig {
-    pub memory: ValidMemoryBackend,
+    pub(crate) memory: ValidMemoryBackend,
     pub models: HashMap<String, ValidModel>,
     pub completion: Option<Completion>,
 }
@@ -308,8 +309,8 @@ pub struct ValidClientParams {
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub config: ValidConfig,
-    pub client_params: ValidClientParams,
+    pub(crate) config: ValidConfig,
+    pub(crate) client_params: ValidClientParams,
 }
 
 impl Config {

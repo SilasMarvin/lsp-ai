@@ -12,7 +12,7 @@ pub struct Crawl {
 }
 
 impl Crawl {
-    pub fn new(crawl_config: config::Crawl, config: Config) -> Self {
+    pub(crate) fn new(crawl_config: config::Crawl, config: Config) -> Self {
         Self {
             crawl_config,
             config,
