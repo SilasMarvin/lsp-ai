@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub type Kwargs = HashMap<String, Value>;
+pub(crate) type Kwargs = HashMap<String, Value>;
 
 const fn max_requests_per_second_default() -> f32 {
     1.
@@ -70,7 +70,7 @@ pub struct TextSplitter {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub enum ValidMemoryBackend {
+pub(crate) enum ValidMemoryBackend {
     #[serde(rename = "file_store")]
     FileStore(FileStore),
     #[serde(rename = "postgresml")]
@@ -79,7 +79,7 @@ pub enum ValidMemoryBackend {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
-pub enum ValidModel {
+pub(crate) enum ValidModel {
     #[cfg(feature = "llama_cpp")]
     #[serde(rename = "llama_cpp")]
     LLaMACPP(LLaMACPP),
@@ -97,13 +97,13 @@ pub enum ValidModel {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
+pub(crate) struct ChatMessage {
+    pub(crate) role: String,
+    pub(crate) content: String,
 }
 
 impl ChatMessage {
-    pub fn new(role: String, content: String) -> Self {
+    pub(crate) fn new(role: String, content: String) -> Self {
         Self {
             role,
             content,
@@ -115,10 +115,10 @@ impl ChatMessage {
 #[derive(Clone, Debug, Deserialize)]
 #[allow(clippy::upper_case_acronyms)]
 #[serde(deny_unknown_fields)]
-pub struct FIM {
-    pub start: String,
-    pub middle: String,
-    pub end: String,
+pub(crate) struct FIM {
+    pub(crate) start: String,
+    pub(crate) middle: String,
+    pub(crate) end: String,
 }
 
 const fn max_crawl_memory_default() -> u64 {
@@ -131,71 +131,71 @@ const fn max_crawl_file_size_default() -> u64 {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Crawl {
+pub(crate) struct Crawl {
     #[serde(default = "max_crawl_file_size_default")]
-    pub max_file_size: u64,
+    pub(crate) max_file_size: u64,
     #[serde(default = "max_crawl_memory_default")]
-    pub max_crawl_memory: u64,
+    pub(crate) max_crawl_memory: u64,
     #[serde(default)]
-    pub all_files: bool,
+    pub(crate) all_files: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct PostgresMLEmbeddingModel {
-    pub model: String,
-    pub embed_parameters: Option<Value>,
-    pub query_parameters: Option<Value>,
+pub(crate) struct PostgresMLEmbeddingModel {
+    pub(crate) model: String,
+    pub(crate) embed_parameters: Option<Value>,
+    pub(crate) query_parameters: Option<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PostgresML {
-    pub database_url: Option<String>,
-    pub crawl: Option<Crawl>,
+pub(crate) struct PostgresML {
+    pub(crate) database_url: Option<String>,
+    pub(crate) crawl: Option<Crawl>,
     #[serde(default)]
-    pub splitter: ValidSplitter,
-    pub embedding_model: Option<PostgresMLEmbeddingModel>,
+    pub(crate) splitter: ValidSplitter,
+    pub(crate) embedding_model: Option<PostgresMLEmbeddingModel>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub struct FileStore {
-    pub crawl: Option<Crawl>,
+pub(crate) struct FileStore {
+    pub(crate) crawl: Option<Crawl>,
 }
 
 impl FileStore {
-    pub fn new_without_crawl() -> Self {
+    pub(crate) fn new_without_crawl() -> Self {
         Self { crawl: None }
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Ollama {
+pub(crate) struct Ollama {
     // The generate endpoint, default: 'http://localhost:11434/api/generate'
-    pub generate_endpoint: Option<String>,
+    pub(crate) generate_endpoint: Option<String>,
     // The chat endpoint, default: 'http://localhost:11434/api/chat'
-    pub chat_endpoint: Option<String>,
+    pub(crate) chat_endpoint: Option<String>,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MistralFIM {
+pub(crate) struct MistralFIM {
     // The auth token env var name
-    pub auth_token_env_var_name: Option<String>,
-    pub auth_token: Option<String>,
+    pub(crate) auth_token_env_var_name: Option<String>,
+    pub(crate) auth_token: Option<String>,
     // The fim endpoint
-    pub fim_endpoint: Option<String>,
+    pub(crate) fim_endpoint: Option<String>,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
 }
 
 #[cfg(feature = "llama_cpp")]
@@ -229,87 +229,89 @@ pub struct LLaMACPP {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct OpenAI {
+pub(crate) struct OpenAI {
     // The auth token env var name
-    pub auth_token_env_var_name: Option<String>,
+    pub(crate) auth_token_env_var_name: Option<String>,
     // The auth token
-    pub auth_token: Option<String>,
+    pub(crate) auth_token: Option<String>,
     // The completions endpoint
-    pub completions_endpoint: Option<String>,
+    pub(crate) completions_endpoint: Option<String>,
     // The chat endpoint
-    pub chat_endpoint: Option<String>,
+    pub(crate) chat_endpoint: Option<String>,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Gemini {
+pub(crate) struct Gemini {
     // The auth token env var name
-    pub auth_token_env_var_name: Option<String>,
+    pub(crate) auth_token_env_var_name: Option<String>,
     // The auth token
-    pub auth_token: Option<String>,
+    pub(crate) auth_token: Option<String>,
     // The completions endpoint
-    pub completions_endpoint: Option<String>,
+    #[allow(dead_code)]
+    pub(crate) completions_endpoint: Option<String>,
     // The chat endpoint
-    pub chat_endpoint: Option<String>,
+    pub(crate) chat_endpoint: Option<String>,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Anthropic {
+pub(crate) struct Anthropic {
     // The auth token env var name
-    pub auth_token_env_var_name: Option<String>,
-    pub auth_token: Option<String>,
+    pub(crate) auth_token_env_var_name: Option<String>,
+    pub(crate) auth_token: Option<String>,
     // The completions endpoint
-    pub completions_endpoint: Option<String>,
+    #[allow(dead_code)]
+    pub(crate) completions_endpoint: Option<String>,
     // The chat endpoint
-    pub chat_endpoint: Option<String>,
+    pub(crate) chat_endpoint: Option<String>,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Completion {
+pub(crate) struct Completion {
     // The model key to use
-    pub model: String,
+    pub(crate) model: String,
     // Args are deserialized by the backend using them
     #[serde(default)]
-    pub parameters: Kwargs,
+    pub(crate) parameters: Kwargs,
     // Parameters for post processing
     #[serde(default)]
-    pub post_process: PostProcess,
+    pub(crate) post_process: PostProcess,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ValidConfig {
-    pub memory: ValidMemoryBackend,
-    pub models: HashMap<String, ValidModel>,
-    pub completion: Option<Completion>,
+pub(crate) struct ValidConfig {
+    pub(crate) memory: ValidMemoryBackend,
+    pub(crate) models: HashMap<String, ValidModel>,
+    pub(crate) completion: Option<Completion>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
-pub struct ValidClientParams {
+pub(crate) struct ValidClientParams {
     #[serde(alias = "rootUri")]
-    pub root_uri: Option<String>,
+    pub(crate) root_uri: Option<String>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub config: ValidConfig,
-    pub client_params: ValidClientParams,
+    pub(crate) config: ValidConfig,
+    pub(crate) client_params: ValidClientParams,
 }
 
 impl Config {

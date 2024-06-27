@@ -1,0 +1,19 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = "1"
+flate2 = "1"
+write-json = "0.1"
+xshell = "0.2"
+xflags = "0.3"
+time = { version = "0.3", default-features = false }
+zip = { version = "0.6", default-features = false, features = [
+  "deflate",
+  "time",
+] }

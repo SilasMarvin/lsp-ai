@@ -39,7 +39,7 @@ const fn max_tokens_default() -> usize {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Part {
-    pub text: String,
+    pub(crate) text: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -55,37 +55,33 @@ impl GeminiContent {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename = "camelCase")]
 #[serde(deny_unknown_fields)]
-pub struct GeminiGenerationConfig {
-    #[serde(rename = "stopSequences")]
+pub(crate) struct GeminiGenerationConfig {
     #[serde(default)]
-    pub stop_sequences: Vec<String>,
-    #[serde(rename = "maxOutputTokens")]
+    pub(crate) stop_sequences: Vec<String>,
     #[serde(default = "max_tokens_default")]
-    pub max_output_tokens: usize,
-    pub temperature: Option<f32>,
-    #[serde(rename = "topP")]
-    pub top_p: Option<f32>,
-    #[serde(rename = "topK")]
-    pub top_k: Option<f32>,
+    pub(crate) max_output_tokens: usize,
+    pub(crate) temperature: Option<f32>,
+    pub(crate) top_p: Option<f32>,
+    pub(crate) top_k: Option<f32>,
 }
 
 // NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct GeminiRunParams {
+#[serde(rename = "camelCase")]
+pub(crate) struct GeminiRunParams {
     contents: Vec<GeminiContent>,
-    #[serde(rename = "systemInstruction")]
     system_instruction: GeminiContent,
-    #[serde(rename = "generationConfig")]
     generation_config: Option<GeminiGenerationConfig>,
 }
 
-pub struct Gemini {
+pub(crate) struct Gemini {
     configuration: config::Gemini,
 }
 
 impl Gemini {
-    pub fn new(configuration: config::Gemini) -> Self {
+    pub(crate) fn new(configuration: config::Gemini) -> Self {
         Self { configuration }
     }
 

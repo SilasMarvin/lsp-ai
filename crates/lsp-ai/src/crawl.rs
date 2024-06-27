@@ -4,7 +4,7 @@ use tracing::{error, instrument};
 
 use crate::config::{self, Config};
 
-pub struct Crawl {
+pub(crate) struct Crawl {
     crawl_config: config::Crawl,
     config: Config,
     crawled_file_types: HashSet<String>,
@@ -12,7 +12,7 @@ pub struct Crawl {
 }
 
 impl Crawl {
-    pub fn new(crawl_config: config::Crawl, config: Config) -> Self {
+    pub(crate) fn new(crawl_config: config::Crawl, config: Config) -> Self {
         Self {
             crawl_config,
             config,
@@ -37,11 +37,10 @@ impl Crawl {
             }
 
             let extension_to_match = triggered_file
-                .map(|tf| {
+                .and_then(|tf| {
                     let path = std::path::Path::new(&tf);
                     path.extension().map(|f| f.to_str().map(|f| f.to_owned()))
                 })
-                .flatten()
                 .flatten();
 
             if let Some(extension_to_match) = &extension_to_match {
@@ -70,7 +69,7 @@ impl Crawl {
                             }
                         } else {
                             match (
-                                path.extension().map(|pe| pe.to_str()).flatten(),
+                                path.extension().and_then(|pe| pe.to_str()),
                                 &extension_to_match,
                             ) {
                                 (Some(path_extension), Some(extension_to_match)) => {

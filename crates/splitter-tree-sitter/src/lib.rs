@@ -55,11 +55,7 @@ impl TreeSitterCodeSplitter {
         }
     }
 
-    pub fn split<'a, 'b, 'c>(
-        &'a self,
-        tree: &'b Tree,
-        utf8: &'c [u8],
-    ) -> Result<Vec<Chunk<'c>>, SplitError> {
+    pub fn split<'c>(&self, tree: &Tree, utf8: &'c [u8]) -> Result<Vec<Chunk<'c>>, SplitError> {
         let cursor = tree.walk();
         Ok(self
             .split_recursive(cursor, utf8)?
@@ -68,7 +64,7 @@ impl TreeSitterCodeSplitter {
             // Let's combine some of our smaller chunks together
             // We also want to do this in reverse as it (seems) to make more sense to combine code slices from bottom to top
             .try_fold(vec![], |mut acc, current| {
-                if acc.len() == 0 {
+                if acc.is_empty() {
                     acc.push(current);
                     Ok::<_, SplitError>(acc)
                 } else {
@@ -94,9 +90,9 @@ impl TreeSitterCodeSplitter {
             .collect())
     }
 
-    fn split_recursive<'a, 'b, 'c>(
-        &'a self,
-        mut cursor: TreeCursor<'b>,
+    fn split_recursive<'c>(
+        &self,
+        mut cursor: TreeCursor<'_>,
         utf8: &'c [u8],
     ) -> Result<Vec<Chunk<'c>>, SplitError> {
         let node = cursor.node();

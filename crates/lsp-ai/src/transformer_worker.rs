@@ -20,25 +20,25 @@ use crate::transformer_backends::TransformerBackend;
 use crate::utils::{ToResponseError, TOKIO_RUNTIME};
 
 #[derive(Clone, Debug)]
-pub struct CompletionRequest {
+pub(crate) struct CompletionRequest {
     id: RequestId,
     params: CompletionParams,
 }
 
 impl CompletionRequest {
-    pub fn new(id: RequestId, params: CompletionParams) -> Self {
+    pub(crate) fn new(id: RequestId, params: CompletionParams) -> Self {
         Self { id, params }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct GenerationRequest {
+pub(crate) struct GenerationRequest {
     id: RequestId,
     params: GenerationParams,
 }
 
 impl GenerationRequest {
-    pub fn new(id: RequestId, params: GenerationParams) -> Self {
+    pub(crate) fn new(id: RequestId, params: GenerationParams) -> Self {
         Self { id, params }
     }
 }
@@ -58,7 +58,7 @@ impl GenerationStreamRequest {
 }
 
 #[derive(Clone, Debug)]
-pub enum WorkerRequest {
+pub(crate) enum WorkerRequest {
     Completion(CompletionRequest),
     Generation(GenerationRequest),
     GenerationStream(GenerationStreamRequest),
@@ -159,7 +159,7 @@ fn post_process_response(
     }
 }
 
-pub fn run(
+pub(crate) fn run(
     transformer_backends: HashMap<String, Box<dyn TransformerBackend + Send + Sync>>,
     memory_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
     transformer_rx: std::sync::mpsc::Receiver<WorkerRequest>,
@@ -338,7 +338,7 @@ async fn do_completion(
     let mut response = transformer_backend.do_completion(&prompt, params).await?;
 
     if let Some(post_process) = config.get_completions_post_process() {
-        response.insert_text = post_process_response(response.insert_text, &prompt, &post_process);
+        response.insert_text = post_process_response(response.insert_text, &prompt, post_process);
     }
 
     // Build and send the response

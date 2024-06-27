@@ -17,12 +17,12 @@ use crate::{
 use super::{ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType};
 
 #[derive(Default)]
-pub struct AdditionalFileStoreParams {
+pub(crate) struct AdditionalFileStoreParams {
     build_tree: bool,
 }
 
 impl AdditionalFileStoreParams {
-    pub fn new(build_tree: bool) -> Self {
+    pub(crate) fn new(build_tree: bool) -> Self {
         Self { build_tree }
     }
 }
@@ -47,7 +47,7 @@ impl File {
     }
 }
 
-pub struct FileStore {
+pub(crate) struct FileStore {
     params: AdditionalFileStoreParams,
     file_map: Mutex<HashMap<String, File>>,
     accessed_files: Mutex<IndexSet<String>>,
@@ -55,7 +55,10 @@ pub struct FileStore {
 }
 
 impl FileStore {
-    pub fn new(mut file_store_config: config::FileStore, config: Config) -> anyhow::Result<Self> {
+    pub(crate) fn new(
+        mut file_store_config: config::FileStore,
+        config: Config,
+    ) -> anyhow::Result<Self> {
         let crawl = file_store_config
             .crawl
             .take()
@@ -72,7 +75,7 @@ impl FileStore {
         Ok(s)
     }
 
-    pub fn new_with_params(
+    pub(crate) fn new_with_params(
         mut file_store_config: config::FileStore,
         config: Config,
         params: AdditionalFileStoreParams,
@@ -192,7 +195,7 @@ impl FileStore {
         Ok((rope, cursor_index))
     }
 
-    pub fn get_characters_around_position(
+    pub(crate) fn get_characters_around_position(
         &self,
         position: &TextDocumentPositionParams,
         characters: usize,
@@ -216,7 +219,7 @@ impl FileStore {
         Ok(rope_slice.to_string())
     }
 
-    pub fn build_code(
+    pub(crate) fn build_code(
         &self,
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
@@ -272,15 +275,18 @@ impl FileStore {
         })
     }
 
-    pub fn file_map(&self) -> &Mutex<HashMap<String, File>> {
+    pub(crate) fn file_map(&self) -> &Mutex<HashMap<String, File>> {
         &self.file_map
     }
 
-    pub fn contains_file(&self, uri: &str) -> bool {
+    pub(crate) fn contains_file(&self, uri: &str) -> bool {
         self.file_map.lock().contains_key(uri)
     }
 
-    pub fn position_to_byte(&self, position: &TextDocumentPositionParams) -> anyhow::Result<usize> {
+    pub(crate) fn position_to_byte(
+        &self,
+        position: &TextDocumentPositionParams,
+    ) -> anyhow::Result<usize> {
         let file_map = self.file_map.lock();
         let uri = position.text_document.uri.to_string();
         let file = file_map
@@ -322,7 +328,7 @@ impl MemoryBackend for FileStore {
         prompt_type: PromptType,
         params: &Value,
     ) -> anyhow::Result<Prompt> {
-        let params: MemoryRunParams = params.try_into()?;
+        let params: MemoryRunParams = params.into();
         self.build_code(position, prompt_type, params, true)
     }
 

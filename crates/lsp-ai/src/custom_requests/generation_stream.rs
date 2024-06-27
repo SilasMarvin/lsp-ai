@@ -1,7 +1,7 @@
 use lsp_types::{ProgressToken, TextDocumentPositionParams};
 use serde::{Deserialize, Serialize};
 
-pub enum GenerationStream {}
+pub(crate) enum GenerationStream {}
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,9 +15,9 @@ pub struct GenerationStreamParams {
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GenerationStreamResult {
-    pub generated_text: String,
-    pub partial_result_token: ProgressToken,
+pub(crate) struct GenerationStreamResult {
+    pub(crate) generated_text: String,
+    pub(crate) partial_result_token: ProgressToken,
 }
 
 impl lsp_types::request::Request for GenerationStream {
