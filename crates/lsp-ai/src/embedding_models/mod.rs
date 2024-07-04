@@ -2,6 +2,18 @@ use crate::config::ValidEmbeddingModel;
 
 mod ollama;
 
+pub fn normalize(mut vector: Vec<f32>) -> Vec<f32> {
+    let magnitude = (vector.iter().map(|&x| x * x).sum::<f32>()).sqrt();
+
+    if magnitude != 0.0 {
+        for element in &mut vector {
+            *element /= magnitude;
+        }
+    }
+
+    vector
+}
+
 #[derive(Clone, Copy)]
 pub enum EmbeddingPurpose {
     Storage,

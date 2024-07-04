@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use crate::config;
 
-use super::{EmbeddingModel, EmbeddingPurpose};
+use super::{normalize, EmbeddingModel, EmbeddingPurpose};
 
 #[derive(Deserialize)]
 pub struct EmbedResponse {
@@ -61,7 +61,7 @@ impl EmbeddingModel for Ollama {
             if let Some(error) = res.error {
                 anyhow::bail!("{:?}", error.to_string())
             } else if let Some(embedding) = res.embedding {
-                results.push(embedding);
+                results.push(normalize(embedding));
             } else {
                 anyhow::bail!(
                     "Unknown error while making request to Ollama: {:?}",

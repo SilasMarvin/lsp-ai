@@ -32,6 +32,19 @@ use super::{
 
 type IndexMap<K, V> = indexmap::IndexMap<K, V, FxBuildHasher>;
 
+#[cfg(not(feature = "simsimd"))]
+fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
+}
+
+#[cfg(not(feature = "simsimd"))]
+fn hamming_distance(a: &[u8], b: &[u8]) -> usize {
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| (x ^ y).count_ones() as usize)
+        .sum()
+}
+
 struct StoredChunkUpsert {
     range: ByteRange,
     index: Option<usize>,
@@ -186,42 +199,48 @@ impl VS {
     fn search(
         &self,
         limit: usize,
+        rerank_top_k: Option<usize>,
         embedding: Vec<f32>,
         current_uri: &str,
         current_byte: usize,
     ) -> anyhow::Result<Vec<String>> {
-        let embedding = StoredChunkVec::new(self.data_type, embedding);
+        let scv_embedding = StoredChunkVec::new(self.data_type, embedding.clone());
+        let find_limit = match rerank_top_k {
+            Some(rerank) => rerank,
+            None => limit,
+        };
         let results: Vec<BTreeMap<_, _>> =
             self.store
                 .par_values()
                 .fold_with(BTreeMap::new(), |mut acc, chunks| {
                     for chunk in chunks {
-                        // TODO: Review what type of similarity we want to use here
-                        let score = match (&chunk.vec, &embedding) {
+                        let score = match (&chunk.vec, &scv_embedding) {
                             (StoredChunkVec::F32(vec1), StoredChunkVec::F32(vec2)) => {
                                 #[cfg(feature = "simsimd")]
                                 {
                                     OrderedFloat(
-                                        SpatialSimilarity::cos(vec1, vec2).unwrap_or(0.) as f32
+                                        SpatialSimilarity::dot(vec1, vec2).unwrap_or(0.) as f32
                                     )
                                 }
-                                // TODO: Add default similarity check
                                 #[cfg(not(feature = "simsimd"))]
                                 {
-                                    0
+                                    OrderedFloat(dot_product(&vec1, &vec2))
                                 }
                             }
                             (StoredChunkVec::Binary(vec1), StoredChunkVec::Binary(vec2)) => {
                                 #[cfg(feature = "simsimd")]
                                 {
                                     OrderedFloat(
-                                        BinarySimilarity::hamming(vec1, vec2).unwrap_or(0.) as f32,
+                                        embedding.len() as f32
+                                            - BinarySimilarity::hamming(vec1, vec2).unwrap_or(0.)
+                                                as f32,
                                     )
                                 }
-                                // TODO: Add default similarity check
                                 #[cfg(not(feature = "simsimd"))]
                                 {
-                                    0
+                                    OrderedFloat(
+                                        (embedding.len() - hamming_distance(&vec1, &vec2)) as f32,
+                                    )
                                 }
                             }
                             _ => OrderedFloat(0.),
@@ -230,7 +249,7 @@ impl VS {
                             acc.insert(score, chunk);
                         } else if acc.first_key_value().unwrap().0 < &score {
                             // We want to get limit + 1 here in case the limit is 1 and then we filter the chunk out later
-                            if acc.len() == limit + 1 {
+                            if acc.len() == find_limit + 1 {
                                 acc.pop_first();
                             }
                             acc.insert(score, chunk);
@@ -242,6 +261,40 @@ impl VS {
         let mut top_results = BTreeMap::new();
         for result in results {
             for (sub_result_score, sub_result_chunk) in result {
+                let sub_result_score = if rerank_top_k.is_some() {
+                    match &sub_result_chunk.vec {
+                        StoredChunkVec::Binary(b) => {
+                            // Convert binary vector to f32 vec
+                            let mut b_f32 = vec![];
+                            for byte in b {
+                                for i in 0..8 {
+                                    let x = byte >> (8 - i) & 1;
+                                    b_f32.push(x as f32);
+                                }
+                            }
+                            b_f32.truncate(embedding.len());
+                            #[cfg(feature = "simsimd")]
+                            {
+                                OrderedFloat(
+                                    SpatialSimilarity::dot(&b_f32, &embedding)
+                                        .context("mismatch in vector size when re-ranking")?
+                                        as f32,
+                                )
+                            }
+                            #[cfg(not(feature = "simsimd"))]
+                            {
+                                OrderedFloat(dot_product(&b_f32, &embedding) as f32)
+                            }
+                        }
+                        StoredChunkVec::F32(_) => {
+                            warn!("Not reranking in vector_store because vectors are not binary");
+                            sub_result_score
+                        }
+                    }
+                } else {
+                    sub_result_score
+                };
+
                 // Filter out chunks that are in the current chunk
                 if sub_result_chunk.uri == current_uri
                     && sub_result_chunk.range.start_byte <= current_byte
@@ -587,6 +640,7 @@ impl MemoryBackend for VectorStore {
             .read()
             .search(
                 limit,
+                None,
                 embedding,
                 position.text_document.uri.as_ref(),
                 cursor_byte,
@@ -908,7 +962,7 @@ assert multiply_two_numbers(2, 3) == 6
         println!("Insert took {} milliseconds.", elapsed_time.as_millis());
         // Time search
         let now = std::time::Instant::now();
-        vector_store.search(5, embedding, "", 0)?;
+        vector_store.search(5, None, embedding, "", 0)?;
         let elapsed_time = now.elapsed();
         println!("Search took {} milliseconds.", elapsed_time.as_millis());
         Ok(())
@@ -943,7 +997,7 @@ assert multiply_two_numbers(2, 3) == 6
         println!("Insert took {} milliseconds.", elapsed_time.as_millis());
         // Time search
         let now = std::time::Instant::now();
-        vector_store.search(5, embedding, "", 0)?;
+        vector_store.search(5, Some(100), embedding, "", 0)?;
         let elapsed_time = now.elapsed();
         println!("Search took {} milliseconds.", elapsed_time.as_millis());
         Ok(())
