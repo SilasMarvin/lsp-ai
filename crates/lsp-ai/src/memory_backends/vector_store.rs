@@ -7,7 +7,16 @@ use lsp_types::{
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use serde_json::Value;
-use std::{collections::BTreeMap, io::Read, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    io::Read,
+    sync::{
+        mpsc::{self, Sender},
+        Arc,
+    },
+    time::Duration,
+};
+use tokio::time;
 use tracing::{error, instrument, warn};
 
 #[cfg(feature = "simsimd")]
@@ -321,12 +330,13 @@ impl VS {
 }
 
 pub struct VectorStore {
-    file_store: FileStore,
+    file_store: Arc<FileStore>,
     crawl: Option<Arc<Mutex<Crawl>>>,
     splitter: Arc<Box<dyn Splitter + Send + Sync>>,
     embedding_model: Arc<Box<dyn EmbeddingModel + Send + Sync>>,
     vector_store: Arc<RwLock<VS>>,
     config: Config,
+    debounce_tx: Sender<String>,
 }
 
 impl VectorStore {
@@ -342,12 +352,160 @@ impl VectorStore {
             Arc::new(vector_store_config.splitter.clone().try_into()?);
         let embedding_model: Arc<Box<dyn EmbeddingModel + Send + Sync>> =
             Arc::new(vector_store_config.embedding_model.try_into()?);
-        let file_store = FileStore::new_with_params(
+        let file_store = Arc::new(FileStore::new_with_params(
             config::FileStore::new_without_crawl(),
             config.clone(),
             AdditionalFileStoreParams::new(splitter.does_use_tree_sitter()),
-        )?;
+        )?);
         let vector_store = Arc::new(RwLock::new(VS::new(vector_store_config.data_type)));
+
+        // Debounce document changes to reduce the number of embeddings we perform
+        let (debounce_tx, debounce_rx) = mpsc::channel::<String>();
+        let task_embedding_model = embedding_model.clone();
+        let task_vector_store = vector_store.clone();
+        let task_file_store = file_store.clone();
+        let task_splitter = splitter.clone();
+        let task_root_uri = config.client_params.root_uri.clone();
+        TOKIO_RUNTIME.spawn(async move {
+            let duration = Duration::from_millis(500);
+            let mut file_uris = Vec::new();
+            loop {
+                time::sleep(duration).await;
+                let new_uris: Vec<String> = debounce_rx.try_iter().collect();
+                if !new_uris.is_empty() {
+                    for uri in new_uris {
+                        if !file_uris.iter().any(|p| *p == uri) {
+                            file_uris.push(uri);
+                        }
+                    }
+                } else {
+                    if file_uris.is_empty() {
+                        continue;
+                    }
+
+                    for uri in file_uris {
+                        let chunks = {
+                            let file_map = task_file_store.file_map().read();
+                            let file = match file_map
+                                .get(&uri)
+                                .context("file not found for debounced embedding")
+                            {
+                                Ok(file) => file,
+                                Err(e) => {
+                                    error!("{e:?}");
+                                    continue;
+                                }
+                            };
+                            task_splitter.split(file)
+                        };
+                        let chunks_size = chunks.len();
+
+                        // This is not as efficient as it could be, but it is ok for now
+                        // We may want a better system than string comparing constantly
+                        let chunks_to_upsert = match task_vector_store.read().store.get(&uri) {
+                            Some(existing_chunks) => {
+                                let mut chunks_to_upsert = vec![];
+                                for (i, chunk) in chunks.into_iter().enumerate() {
+                                    if let Some(existing_chunk) = existing_chunks.get(i) {
+                                        // Edit chunk start and end byte
+                                        let has_chunk_changed = chunk.text != existing_chunk.text;
+                                        if !has_chunk_changed {
+                                            if chunk.range.start_byte
+                                                != existing_chunk.range.start_byte
+                                                || chunk.range.end_byte
+                                                    != existing_chunk.range.end_byte
+                                            {
+                                                chunks_to_upsert.push(StoredChunkUpsert::new(
+                                                    chunk.range,
+                                                    Some(i),
+                                                    None,
+                                                    None,
+                                                ));
+                                            }
+                                        } else {
+                                            chunks_to_upsert.push(StoredChunkUpsert::new(
+                                                chunk.range,
+                                                Some(i),
+                                                None,
+                                                Some(format_file_chunk(
+                                                    &uri,
+                                                    &chunk.text,
+                                                    task_root_uri.as_deref(),
+                                                )),
+                                            ));
+                                        }
+                                    } else {
+                                        chunks_to_upsert.push(StoredChunkUpsert::new(
+                                            chunk.range,
+                                            None,
+                                            None,
+                                            Some(format_file_chunk(
+                                                &uri,
+                                                &chunk.text,
+                                                task_root_uri.as_deref(),
+                                            )),
+                                        ));
+                                    }
+                                }
+                                chunks_to_upsert
+                            }
+                            None => chunks
+                                .into_iter()
+                                .map(|chunk| {
+                                    StoredChunkUpsert::new(
+                                        chunk.range,
+                                        None,
+                                        None,
+                                        Some(format_file_chunk(
+                                            &uri,
+                                            &chunk.text,
+                                            task_root_uri.as_deref(),
+                                        )),
+                                    )
+                                })
+                                .collect(),
+                        };
+                        // Embed all chunks with text
+                        match task_embedding_model
+                            .embed(
+                                chunks_to_upsert
+                                    .iter()
+                                    .filter(|c| c.text.is_some())
+                                    .map(|c| c.text.as_ref().unwrap().as_str())
+                                    .collect(),
+                                EmbeddingPurpose::Storage,
+                            )
+                            .await
+                        {
+                            Ok(mut embeddings) => {
+                                let chunks_to_upsert: Vec<StoredChunkUpsert> = chunks_to_upsert
+                                    .into_iter()
+                                    .map(|mut c| {
+                                        if c.text.is_some() {
+                                            c.vec = Some(embeddings.remove(0))
+                                        }
+                                        c
+                                    })
+                                    .collect();
+                                if let Err(e) = task_vector_store.write().sync_file_chunks(
+                                    &uri,
+                                    chunks_to_upsert,
+                                    Some(chunks_size),
+                                ) {
+                                    error!("{e:?}");
+                                }
+                            }
+                            Err(e) => {
+                                error!("{e:?}");
+                            }
+                        }
+                    }
+
+                    file_uris = vec![];
+                }
+            }
+        });
+
         let s = Self {
             file_store,
             crawl,
@@ -355,6 +513,7 @@ impl VectorStore {
             embedding_model,
             vector_store,
             config,
+            debounce_tx,
         };
         if let Err(e) = s.maybe_do_crawl(None) {
             error!("{e:?}")
@@ -418,11 +577,13 @@ impl VectorStore {
                         warn!("Ending crawl early due to `max_crawl_memory` restraint");
                         return Ok(false);
                     }
+
                     // This means it has been opened before
                     let uri = format!("file://{path}");
                     if self.file_store.contains_file(&uri) {
                         return Ok(true);
                     }
+
                     // Open the file and see if it is small enough to read
                     let mut f = std::fs::File::open(path)?;
                     let metadata = f.metadata()?;
@@ -430,11 +591,13 @@ impl VectorStore {
                         warn!("Skipping file: {path} because it is too large");
                         return Ok(true);
                     }
+
                     // Read the file contents
                     let mut contents = vec![];
                     f.read_to_end(&mut contents)?;
                     let contents = String::from_utf8(contents)?;
                     total_bytes += contents.len();
+
                     // Store the file
                     let chunks = self.splitter.split_file_contents(&uri, &contents);
                     self.upsert_chunks(&uri, chunks);
@@ -467,115 +630,7 @@ impl MemoryBackend for VectorStore {
     fn changed_text_document(&self, params: DidChangeTextDocumentParams) -> anyhow::Result<()> {
         let uri = params.text_document.uri.to_string();
         self.file_store.changed_text_document(params.clone())?;
-
-        let chunks = {
-            let file_map = self.file_store.file_map().read();
-            let file = file_map.get(&uri).context("file not found")?;
-            self.splitter.split(file)
-        };
-        let chunks_size = chunks.len();
-
-        // This is not as efficient as it could be, but it is ok for now
-        // We may want a better system than string comparing constantly
-        let chunks_to_upsert = match self.vector_store.read().store.get(&uri) {
-            Some(existing_chunks) => {
-                let mut chunks_to_upsert = vec![];
-                for (i, chunk) in chunks.into_iter().enumerate() {
-                    if let Some(existing_chunk) = existing_chunks.get(i) {
-                        let has_chunk_changed = chunk.text != existing_chunk.text;
-                        // Edit chunk start and end byte
-                        if !has_chunk_changed {
-                            if chunk.range.start_byte != existing_chunk.range.start_byte
-                                || chunk.range.end_byte != existing_chunk.range.end_byte
-                            {
-                                chunks_to_upsert.push(StoredChunkUpsert::new(
-                                    chunk.range,
-                                    Some(i),
-                                    None,
-                                    None,
-                                ));
-                            }
-                        } else {
-                            chunks_to_upsert.push(StoredChunkUpsert::new(
-                                chunk.range,
-                                Some(i),
-                                None,
-                                Some(format_file_chunk(
-                                    &uri,
-                                    &chunk.text,
-                                    self.config.client_params.root_uri.as_deref(),
-                                )),
-                            ));
-                        }
-                    } else {
-                        chunks_to_upsert.push(StoredChunkUpsert::new(
-                            chunk.range,
-                            None,
-                            None,
-                            Some(format_file_chunk(
-                                &uri,
-                                &chunk.text,
-                                self.config.client_params.root_uri.as_deref(),
-                            )),
-                        ));
-                    }
-                }
-                chunks_to_upsert
-            }
-            None => chunks
-                .into_iter()
-                .map(|chunk| {
-                    StoredChunkUpsert::new(
-                        chunk.range,
-                        None,
-                        None,
-                        Some(format_file_chunk(
-                            &uri,
-                            &chunk.text,
-                            self.config.client_params.root_uri.as_deref(),
-                        )),
-                    )
-                })
-                .collect(),
-        };
-        let task_embedding_model = self.embedding_model.clone();
-        let task_vector_store = self.vector_store.clone();
-        TOKIO_RUNTIME.spawn(async move {
-            // Embed all chunks with text
-            match task_embedding_model
-                .embed(
-                    chunks_to_upsert
-                        .iter()
-                        .filter(|c| c.text.is_some())
-                        .map(|c| c.text.as_ref().unwrap().as_str())
-                        .collect(),
-                    EmbeddingPurpose::Storage,
-                )
-                .await
-            {
-                Ok(mut embeddings) => {
-                    let chunks_to_upsert: Vec<StoredChunkUpsert> = chunks_to_upsert
-                        .into_iter()
-                        .map(|mut c| {
-                            if c.text.is_some() {
-                                c.vec = Some(embeddings.remove(0))
-                            }
-                            c
-                        })
-                        .collect();
-                    if let Err(e) = task_vector_store.write().sync_file_chunks(
-                        &uri,
-                        chunks_to_upsert,
-                        Some(chunks_size),
-                    ) {
-                        error!("{e:?}");
-                    }
-                }
-                Err(e) => {
-                    error!("{e:?}");
-                }
-            }
-        });
+        self.debounce_tx.send(uri)?;
         Ok(())
     }
 
@@ -730,7 +785,8 @@ assert multiply_two_numbers(2, 3) == 6
         assert!(chunks.len() == 1);
         assert_eq!(
             chunks[0].text,
-            r#"# Multiplies two numbers
+            r#"--file:///filler.py--
+# Multiplies two numbers
 def multiply_two_numbers(x, y):
     return
 
@@ -815,7 +871,8 @@ assert multiply_two_numbers(2, 3) == 6
         assert!(chunks.len() == 1);
         assert_eq!(
             chunks[0].text,
-            r#"#aultiplies two numbers
+            r#"--file:///filler.py--
+#aultiplies two numbers
 def multiply_two_numbers(x, y):
     return
 
@@ -843,7 +900,7 @@ assert multiply_two_numbers(2, 3) == 6
         let store = vector_store.vector_store.read();
         let chunks = store.store.get("file:///filler.py").unwrap();
         assert!(chunks.len() == 1);
-        assert_eq!(chunks[0].text, "abc");
+        assert_eq!(chunks[0].text, "--file:///filler.py--\nabc");
         Ok(())
     }
 
