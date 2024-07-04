@@ -218,17 +218,17 @@ impl VS {
             Some(rerank) => rerank,
             None => limit,
         };
-        let results: Vec<BTreeMap<_, _>> =
+        let results: anyhow::Result<Vec<BTreeMap<_, _>>> =
             self.store
                 .par_values()
-                .fold_with(BTreeMap::new(), |mut acc, chunks| {
+                .try_fold_with(BTreeMap::new(), |mut acc, chunks| {
                     for chunk in chunks {
                         let score = match (&chunk.vec, &scv_embedding) {
                             (StoredChunkVec::F32(vec1), StoredChunkVec::F32(vec2)) => {
                                 #[cfg(feature = "simsimd")]
                                 {
                                     OrderedFloat(
-                                        SpatialSimilarity::dot(vec1, vec2).unwrap_or(0.) as f32
+                                        SpatialSimilarity::dot(vec1, vec2).context("vector length mismatch when taking the dot product")? as f32
                                     )
                                 }
                                 #[cfg(not(feature = "simsimd"))]
@@ -241,7 +241,7 @@ impl VS {
                                 {
                                     OrderedFloat(
                                         embedding.len() as f32
-                                            - BinarySimilarity::hamming(vec1, vec2).unwrap_or(0.)
+                                            - BinarySimilarity::hamming(vec1, vec2).context("vector length mismatch when taking the hamming distance")?
                                                 as f32,
                                     )
                                 }
@@ -252,7 +252,7 @@ impl VS {
                                     )
                                 }
                             }
-                            _ => OrderedFloat(0.),
+                            _ => anyhow::bail!("mismatch between vector data types in search"),
                         };
                         if acc.is_empty() {
                             acc.insert(score, chunk);
@@ -264,11 +264,11 @@ impl VS {
                             acc.insert(score, chunk);
                         }
                     }
-                    acc
+                    Ok(acc)
                 })
                 .collect();
         let mut top_results = BTreeMap::new();
-        for result in results {
+        for result in results? {
             for (sub_result_score, sub_result_chunk) in result {
                 let sub_result_score = if rerank_top_k.is_some() {
                     match &sub_result_chunk.vec {
@@ -286,7 +286,7 @@ impl VS {
                             {
                                 OrderedFloat(
                                     SpatialSimilarity::dot(&b_f32, &embedding)
-                                        .context("mismatch in vector size when re-ranking")?
+                                        .context("mismatch in vector length when taking the dot product when re-ranking")?
                                         as f32,
                                 )
                             }
