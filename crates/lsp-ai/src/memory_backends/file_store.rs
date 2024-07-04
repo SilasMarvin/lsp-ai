@@ -459,7 +459,7 @@ impl MemoryBackend for FileStore {
     }
 }
 
-// For teesting use only
+// For testing use only
 #[cfg(test)]
 impl FileStore {
     pub fn default_with_filler_file() -> anyhow::Result<Self> {
@@ -639,12 +639,12 @@ mod tests {
             None,
             Some(
                 r#"Document Top
-Here is a more complicated document
+    Here is a more complicated document
 
-Some text
+    Some text
 
-The end with a trailing new line
-"#,
+    The end with a trailing new line
+    "#,
             ),
         );
 
@@ -695,12 +695,12 @@ The end with a trailing new line
         assert_eq!(
             prompt.suffix,
             r#"op
-Here is a more complicated document
+    Here is a more complicated document
 
-Some text
+    Some text
 
-The end with a trailing new line
-"#
+    The end with a trailing new line
+    "#
         );
 
         // Test chat
@@ -724,12 +724,12 @@ The end with a trailing new line
         let prompt: ContextAndCodePrompt = prompt.try_into()?;
         assert_eq!(prompt.context, "");
         let text = r#"Document T<CURSOR>op
-Here is a more complicated document
+    Here is a more complicated document
 
-Some text
+    Some text
 
-The end with a trailing new line
-"#
+    The end with a trailing new line
+    "#
         .to_string();
         assert_eq!(text, prompt.code);
 
@@ -738,12 +738,12 @@ The end with a trailing new line
             Some("file:///filler2"),
             Some(
                 r#"Document Top2
-Here is a more complicated document
+    Here is a more complicated document
 
-Some text
+    Some text
 
-The end with a trailing new line
-"#,
+    The end with a trailing new line
+    "#,
             ),
         );
         let params = lsp_types::DidOpenTextDocumentParams {

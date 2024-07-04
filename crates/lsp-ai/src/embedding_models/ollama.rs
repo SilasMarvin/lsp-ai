@@ -30,7 +30,7 @@ impl Ollama {
 impl EmbeddingModel for Ollama {
     async fn embed(
         &self,
-        batch: &[&str],
+        batch: Vec<&str>,
         purpose: EmbeddingPurpose,
     ) -> anyhow::Result<Vec<Vec<f32>>> {
         let mut results = vec![];
@@ -90,7 +90,7 @@ mod test {
         let ollama = Ollama::new(configuration);
         let results = ollama
             .embed(
-                &["Hello world!", "How are you?"],
+                vec!["Hello world!", "How are you?"],
                 EmbeddingPurpose::Retrieval,
             )
             .await?;

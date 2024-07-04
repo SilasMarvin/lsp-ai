@@ -5,7 +5,7 @@ use crate::{config::ValidSplitter, memory_backends::file_store::File};
 mod text_splitter;
 mod tree_sitter;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ByteRange {
     pub start_byte: usize,
     pub end_byte: usize,

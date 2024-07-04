@@ -20,7 +20,7 @@ use crate::{
     config::{self, Config},
     crawl::Crawl,
     splitters::{Chunk, Splitter},
-    utils::{chunk_to_id, tokens_to_estimated_characters, TOKIO_RUNTIME},
+    utils::{chunk_to_id, format_file_chunk, tokens_to_estimated_characters, TOKIO_RUNTIME},
 };
 
 use super::{
@@ -30,29 +30,11 @@ use super::{
 
 const RESYNC_MAX_FILE_SIZE: u64 = 10_000_000;
 
-fn format_file_excerpt(uri: &str, excerpt: &str, root_uri: Option<&str>) -> String {
-    let path = match root_uri {
-        Some(root_uri) => {
-            if uri.starts_with(root_uri) {
-                &uri[root_uri.chars().count()..]
-            } else {
-                uri
-            }
-        }
-        None => uri,
-    };
-    format!(
-        r#"--{path}--
-{excerpt}
-"#,
-    )
-}
-
 fn chunk_to_document(uri: &str, chunk: Chunk, root_uri: Option<&str>) -> Value {
     json!({
         "id": chunk_to_id(uri, &chunk),
         "uri": uri,
-        "text": format_file_excerpt(uri, &chunk.text, root_uri),
+        "text": format_file_chunk(uri, &chunk.text, root_uri),
         "range": chunk.range
     })
 }
@@ -590,8 +572,8 @@ impl MemoryBackend for PostgresML {
             Prompt::ContextAndCode(context_and_code) => {
                 Prompt::ContextAndCode(ContextAndCodePrompt::new(
                     context.to_owned(),
-                    format_file_excerpt(
-                        position.text_document.uri.as_str(),
+                    format_file_chunk(
+                        position.text_document.uri.as_ref(),
                         &context_and_code.code,
                         self.config.client_params.root_uri.as_deref(),
                     ),

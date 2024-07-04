@@ -12,12 +12,12 @@ pub enum EmbeddingPurpose {
 pub trait EmbeddingModel {
     async fn embed(
         &self,
-        batch: &[&str],
+        batch: Vec<&str>,
         purpose: EmbeddingPurpose,
     ) -> anyhow::Result<Vec<Vec<f32>>>;
 }
 
-impl TryFrom<ValidEmbeddingModel> for Box<dyn EmbeddingModel> {
+impl TryFrom<ValidEmbeddingModel> for Box<dyn EmbeddingModel + Send + Sync> {
     type Error = anyhow::Error;
 
     fn try_from(value: ValidEmbeddingModel) -> Result<Self, Self::Error> {
