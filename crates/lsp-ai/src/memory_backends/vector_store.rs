@@ -196,6 +196,7 @@ impl VS {
                 .par_values()
                 .fold_with(BTreeMap::new(), |mut acc, chunks| {
                     for chunk in chunks {
+                        // TODO: Review what type of similarity we want to use here
                         let score = match (&chunk.vec, &embedding) {
                             (StoredChunkVec::F32(vec1), StoredChunkVec::F32(vec2)) => {
                                 #[cfg(feature = "simsimd")]
@@ -204,6 +205,7 @@ impl VS {
                                         SpatialSimilarity::cos(vec1, vec2).unwrap_or(0.) as f32
                                     )
                                 }
+                                // TODO: Add default similarity check
                                 #[cfg(not(feature = "simsimd"))]
                                 {
                                     0
@@ -216,6 +218,7 @@ impl VS {
                                         BinarySimilarity::hamming(vec1, vec2).unwrap_or(0.) as f32,
                                     )
                                 }
+                                // TODO: Add default similarity check
                                 #[cfg(not(feature = "simsimd"))]
                                 {
                                     0
@@ -905,7 +908,7 @@ assert multiply_two_numbers(2, 3) == 6
         println!("Insert took {} milliseconds.", elapsed_time.as_millis());
         // Time search
         let now = std::time::Instant::now();
-        let results = vector_store.search(5, embedding, "", ByteRange::new(0, 0))?;
+        vector_store.search(5, embedding, "", 0)?;
         let elapsed_time = now.elapsed();
         println!("Search took {} milliseconds.", elapsed_time.as_millis());
         Ok(())
@@ -940,7 +943,7 @@ assert multiply_two_numbers(2, 3) == 6
         println!("Insert took {} milliseconds.", elapsed_time.as_millis());
         // Time search
         let now = std::time::Instant::now();
-        let results = vector_store.search(5, embedding, "", ByteRange::new(0, 0))?;
+        vector_store.search(5, embedding, "", 0)?;
         let elapsed_time = now.elapsed();
         println!("Search took {} milliseconds.", elapsed_time.as_millis());
         Ok(())
