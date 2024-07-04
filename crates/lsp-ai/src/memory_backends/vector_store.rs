@@ -226,7 +226,8 @@ impl VS {
                         if acc.is_empty() {
                             acc.insert(score, chunk);
                         } else if acc.first_key_value().unwrap().0 < &score {
-                            if acc.len() == limit {
+                            // We want to get limit + 1 here in case the limit is 1 and then we filter the chunk out later
+                            if acc.len() == limit + 1 {
                                 acc.pop_first();
                             }
                             acc.insert(score, chunk);
@@ -395,7 +396,7 @@ impl MemoryBackend for VectorStore {
         let uri = params.text_document.uri.to_string();
         self.file_store.opened_text_document(params)?;
 
-        let file_map = self.file_store.file_map().lock();
+        let file_map = self.file_store.file_map().read();
         let file = file_map.get(&uri).context("file not found")?;
         let chunks = self.splitter.split(file);
         self.upsert_chunks(&uri, chunks);
@@ -411,9 +412,11 @@ impl MemoryBackend for VectorStore {
         let uri = params.text_document.uri.to_string();
         self.file_store.changed_text_document(params.clone())?;
 
-        let file_map = self.file_store.file_map().lock();
-        let file = file_map.get(&uri).context("file not found")?;
-        let chunks = self.splitter.split(file);
+        let chunks = {
+            let file_map = self.file_store.file_map().read();
+            let file = file_map.get(&uri).context("file not found")?;
+            self.splitter.split(file)
+        };
         let chunks_size = chunks.len();
 
         // This is not as efficient as it could be, but it is ok for now

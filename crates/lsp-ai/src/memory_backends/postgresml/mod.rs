@@ -50,7 +50,7 @@ async fn split_and_upsert_file(
     let chunks = {
         file_store
             .file_map()
-            .lock()
+            .read()
             .get(uri)
             .map(|f| splitter.split(f))
     };
@@ -184,7 +184,7 @@ impl PostgresML {
                     let chunks: Vec<Vec<Chunk>> = match file_uris
                         .iter()
                         .map(|uri| {
-                            let file_store = task_file_store.file_map().lock();
+                            let file_store = task_file_store.file_map().read();
                             let file = file_store
                                 .get(uri)
                                 .with_context(|| format!("getting file for splitting: {uri}"))?;
