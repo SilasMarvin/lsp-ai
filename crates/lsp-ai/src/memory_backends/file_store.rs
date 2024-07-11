@@ -7,14 +7,18 @@ use serde_json::Value;
 use std::{collections::HashMap, io::Read};
 use tracing::{error, instrument, warn};
 use tree_sitter::{InputEdit, Point, Tree};
+use utils_tree_sitter::parse_tree;
 
 use crate::{
-    config::{self, Config},
+    config::{self, Config, FileStore},
     crawl::Crawl,
-    utils::{parse_tree, tokens_to_estimated_characters},
+    utils::tokens_to_estimated_characters,
 };
 
-use super::{ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryRunParams, Prompt, PromptType};
+use super::{
+    ContextAndCodePrompt, FIMPrompt, MemoryBackend, MemoryBackendError, MemoryRunParams, Prompt,
+    PromptType, Result,
+};
 
 #[derive(Default)]
 pub(crate) struct AdditionalFileStoreParams {
@@ -55,10 +59,7 @@ pub(crate) struct FileStore {
 }
 
 impl FileStore {
-    pub(crate) fn new(
-        mut file_store_config: config::FileStore,
-        config: Config,
-    ) -> anyhow::Result<Self> {
+    pub(crate) fn new(mut file_store_config: config::FileStore, config: Config) -> Result<Self> {
         let crawl = file_store_config
             .crawl
             .take()
@@ -69,9 +70,7 @@ impl FileStore {
             accessed_files: Mutex::new(IndexSet::new()),
             crawl,
         };
-        if let Err(e) = s.maybe_do_crawl(None) {
-            error!("{e:?}")
-        }
+        s.maybe_do_crawl(None)?;
         Ok(s)
     }
 
@@ -79,7 +78,7 @@ impl FileStore {
         mut file_store_config: config::FileStore,
         config: Config,
         params: AdditionalFileStoreParams,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self> {
         let crawl = file_store_config
             .crawl
             .take()
@@ -90,9 +89,7 @@ impl FileStore {
             accessed_files: Mutex::new(IndexSet::new()),
             crawl,
         };
-        if let Err(e) = s.maybe_do_crawl(None) {
-            error!("{e:?}")
-        }
+        s.maybe_do_crawl(None)?;
         Ok(s)
     }
 
@@ -101,9 +98,7 @@ impl FileStore {
             match parse_tree(uri, &contents, None) {
                 Ok(tree) => Some(tree),
                 Err(e) => {
-                    error!(
-                        "Failed to parse tree for {uri} with error {e}, falling back to no tree"
-                    );
+                    error!("Failed to parse tree, falling back to no tree. err: {e}");
                     None
                 }
             }
@@ -116,7 +111,7 @@ impl FileStore {
         self.accessed_files.lock().insert(uri.to_string());
     }
 
-    fn maybe_do_crawl(&self, triggered_file: Option<String>) -> anyhow::Result<()> {
+    fn maybe_do_crawl(&self, triggered_file: Option<String>) -> Result<()> {
         let mut total_bytes = 0;
         let mut current_bytes = 0;
         if let Some(crawl) = &self.crawl {
@@ -158,14 +153,14 @@ impl FileStore {
         position: &TextDocumentPositionParams,
         characters: usize,
         pull_from_multiple_files: bool,
-    ) -> anyhow::Result<(Rope, usize)> {
+    ) -> Result<(Rope, usize)> {
         // Get the rope and set our initial cursor index
         let current_document_uri = position.text_document.uri.to_string();
         let mut rope = self
             .file_map
             .lock()
             .get(&current_document_uri)
-            .context("Error file not found")?
+            .ok_or(MemoryBackendError::FileNotFound(current_document_uri))?
             .rope
             .clone();
         let mut cursor_index = rope.line_to_char(position.position.line as usize)
@@ -182,11 +177,14 @@ impl FileStore {
                 break;
             }
             let file_map = self.file_map.lock();
-            let r = &file_map.get(file).context("Error file not found")?.rope;
+            let r = &file_map
+                .get(file)
+                .ok_or_else(|| MemoryBackendError::FileNotFound(file.to_owned()))?
+                .rope;
             let slice_max = needed.min(r.len_chars() + 1);
             let rope_str_slice = r
                 .get_slice(0..slice_max - 1)
-                .context("Error getting slice")?
+                .ok_or(MemoryBackendError::SliceRangeOutOfBounds(0, slice_max - 1))?
                 .to_string();
             rope.insert(0, "\n");
             rope.insert(0, &rope_str_slice);
@@ -199,15 +197,17 @@ impl FileStore {
         &self,
         position: &TextDocumentPositionParams,
         characters: usize,
-    ) -> anyhow::Result<String> {
+    ) -> Result<String> {
         let rope = self
             .file_map
             .lock()
             .get(position.text_document.uri.as_str())
-            .context("Error file not found")?
+            .ok_or_else(|| {
+                MemoryBackendError::FileNotFound(position.text_document.uri.to_string())
+            })?
             .rope
             .clone();
-        let cursor_index = rope.line_to_char(position.position.line as usize)
+        let cursor_index = rope.try_line_to_char(position.position.line as usize)?
             + position.position.character as usize;
         let start = cursor_index.saturating_sub(characters / 2);
         let end = rope
@@ -215,7 +215,7 @@ impl FileStore {
             .min(cursor_index + (characters - (cursor_index - start)));
         let rope_slice = rope
             .get_slice(start..end)
-            .context("Error getting rope slice")?;
+            .ok_or(MemoryBackendError::SliceRangeOutOfBounds(start, end))?;
         Ok(rope_slice.to_string())
     }
 
@@ -225,7 +225,7 @@ impl FileStore {
         prompt_type: PromptType,
         params: MemoryRunParams,
         pull_from_multiple_files: bool,
-    ) -> anyhow::Result<Prompt> {
+    ) -> Result<Prompt> {
         let (mut rope, cursor_index) =
             self.get_rope_for_position(position, params.max_context, pull_from_multiple_files)?;
 
@@ -236,12 +236,13 @@ impl FileStore {
                     let start = cursor_index.saturating_sub(max_length / 2);
                     let end = rope
                         .len_chars()
-                        .min(cursor_index + (max_length - (cursor_index - start)));
+                        .min(cursor_index + (max_length - (cursor_index - start)))
+                        + "<CURSOR>".chars().count();
 
-                    rope.insert(cursor_index, "<CURSOR>");
+                    rope.try_insert(cursor_index, "<CURSOR>")?;
                     let rope_slice = rope
-                        .get_slice(start..end + "<CURSOR>".chars().count())
-                        .context("Error getting rope slice")?;
+                        .get_slice(start..end)
+                        .ok_or(MemoryBackendError::SliceRangeOutOfBounds(start, end))?;
                     Prompt::ContextAndCode(ContextAndCodePrompt::new(
                         "".to_string(),
                         rope_slice.to_string(),
@@ -249,9 +250,9 @@ impl FileStore {
                 } else {
                     let start = cursor_index
                         .saturating_sub(tokens_to_estimated_characters(params.max_context));
-                    let rope_slice = rope
-                        .get_slice(start..cursor_index)
-                        .context("Error getting rope slice")?;
+                    let rope_slice = rope.get_slice(start..cursor_index).ok_or(
+                        MemoryBackendError::SliceRangeOutOfBounds(start, cursor_index),
+                    )?;
                     Prompt::ContextAndCode(ContextAndCodePrompt::new(
                         "".to_string(),
                         rope_slice.to_string(),
@@ -264,12 +265,12 @@ impl FileStore {
                 let end = rope
                     .len_chars()
                     .min(cursor_index + (max_length - (cursor_index - start)));
-                let prefix = rope
-                    .get_slice(start..cursor_index)
-                    .context("Error getting rope slice")?;
+                let prefix = rope.get_slice(start..cursor_index).ok_or(
+                    MemoryBackendError::SliceRangeOutOfBounds(start, cursor_index),
+                )?;
                 let suffix = rope
                     .get_slice(cursor_index..end)
-                    .context("Error getting rope slice")?;
+                    .ok_or(MemoryBackendError::SliceRangeOutOfBounds(cursor_index, end))?;
                 Prompt::FIM(FIMPrompt::new(prefix.to_string(), suffix.to_string()))
             }
         })
@@ -283,15 +284,12 @@ impl FileStore {
         self.file_map.lock().contains_key(uri)
     }
 
-    pub(crate) fn position_to_byte(
-        &self,
-        position: &TextDocumentPositionParams,
-    ) -> anyhow::Result<usize> {
+    pub(crate) fn position_to_byte(&self, position: &TextDocumentPositionParams) -> Result<usize> {
         let file_map = self.file_map.lock();
         let uri = position.text_document.uri.to_string();
         let file = file_map
             .get(&uri)
-            .with_context(|| format!("trying to get file that does not exist {uri}"))?;
+            .ok_or(MemoryBackendError::FileNotFound(uri))?;
         let line_char_index = file
             .rope
             .try_line_to_char(position.position.line as usize)?;
@@ -304,19 +302,26 @@ impl FileStore {
 #[async_trait::async_trait]
 impl MemoryBackend for FileStore {
     #[instrument(skip(self))]
-    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
+    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> Result<String> {
         let rope = self
             .file_map
             .lock()
             .get(position.text_document.uri.as_str())
-            .context("Error file not found")?
+            .ok_or_else(|| {
+                MemoryBackendError::FileNotFound(position.text_document.uri.to_string())
+            })?
             .rope
             .clone();
         let line = rope
             .get_line(position.position.line as usize)
-            .context("Error getting filter text")?
+            .ok_or(MemoryBackendError::LineOutOfBounds(
+                position.position.line as usize,
+            ))?
             .get_slice(0..position.position.character as usize)
-            .context("Error getting filter text")?
+            .ok_or(MemoryBackendError::SliceRangeOutOfBounds(
+                0,
+                position.position.character as usize,
+            ))?
             .to_string();
         Ok(line)
     }
@@ -327,107 +332,86 @@ impl MemoryBackend for FileStore {
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
         params: &Value,
-    ) -> anyhow::Result<Prompt> {
+    ) -> Result<Prompt> {
         let params: MemoryRunParams = params.into();
         self.build_code(position, prompt_type, params, true)
     }
 
     #[instrument(skip(self))]
-    fn opened_text_document(
-        &self,
-        params: lsp_types::DidOpenTextDocumentParams,
-    ) -> anyhow::Result<()> {
+    fn opened_text_document(&self, params: lsp_types::DidOpenTextDocumentParams) -> Result<()> {
         let uri = params.text_document.uri.to_string();
         self.add_new_file(&uri, params.text_document.text);
-        if let Err(e) = self.maybe_do_crawl(Some(uri)) {
-            error!("{e:?}")
-        }
+        self.maybe_do_crawl(Some(uri))?;
         Ok(())
     }
 
     #[instrument(skip(self))]
-    fn changed_text_document(
-        &self,
-        params: lsp_types::DidChangeTextDocumentParams,
-    ) -> anyhow::Result<()> {
+    fn changed_text_document(&self, params: lsp_types::DidChangeTextDocumentParams) -> Result<()> {
         let uri = params.text_document.uri.to_string();
         let mut file_map = self.file_map.lock();
         let file = file_map
             .get_mut(&uri)
-            .with_context(|| format!("Trying to get file that does not exist {uri}"))?;
+            .ok_or(MemoryBackendError::FileNotFound(uri))?;
         for change in params.content_changes {
             // If range is ommitted, text is the new text of the document
             if let Some(range) = change.range {
                 // Record old positions
                 let (old_end_position, old_end_byte) = {
                     let last_line_index = file.rope.len_lines() - 1;
+                    let last_line = file
+                        .rope
+                        .get_line(last_line_index)
+                        .ok_or(MemoryBackendError::LineOutOfBounds(last_line_index))?;
                     (
-                        file.rope
-                            .get_line(last_line_index)
-                            .context("getting last line for edit")
-                            .map(|last_line| Point::new(last_line_index, last_line.len_chars())),
+                        Point::new(last_line_index, last_line.len_chars()),
                         file.rope.bytes().count(),
                     )
                 };
                 // Update the document
-                let start_index = file.rope.line_to_char(range.start.line as usize)
+                let start_index = file.rope.try_line_to_char(range.start.line as usize)?
                     + range.start.character as usize;
-                let end_index =
-                    file.rope.line_to_char(range.end.line as usize) + range.end.character as usize;
-                file.rope.remove(start_index..end_index);
-                file.rope.insert(start_index, &change.text);
+                let end_index = file.rope.try_line_to_char(range.end.line as usize)?
+                    + range.end.character as usize;
+                file.rope.try_remove(start_index..end_index)?;
+                file.rope.try_insert(start_index, &change.text)?;
                 // Set new end positions
                 let (new_end_position, new_end_byte) = {
                     let last_line_index = file.rope.len_lines() - 1;
+                    let last_line = file
+                        .rope
+                        .get_line(last_line_index)
+                        .ok_or(MemoryBackendError::LineOutOfBounds(last_line_index))?;
                     (
-                        file.rope
-                            .get_line(last_line_index)
-                            .context("getting last line for edit")
-                            .map(|last_line| Point::new(last_line_index, last_line.len_chars())),
+                        Point::new(last_line_index, last_line.len_chars()),
                         file.rope.bytes().count(),
                     )
                 };
                 // Update the tree
                 if self.params.build_tree {
                     let mut old_tree = file.tree.take();
+                    let start_char = file.rope.try_line_to_char(range.start.line as usize)?;
                     let start_byte = file
                         .rope
-                        .try_line_to_char(range.start.line as usize)
-                        .and_then(|start_char| {
-                            file.rope
-                                .try_char_to_byte(start_char + range.start.character as usize)
-                        })
-                        .map_err(anyhow::Error::msg);
+                        .try_char_to_byte(start_char + range.start.character as usize)?;
                     if let Some(old_tree) = &mut old_tree {
-                        match (start_byte, old_end_position, new_end_position) {
-                            (Ok(start_byte), Ok(old_end_position), Ok(new_end_position)) => {
-                                old_tree.edit(&InputEdit {
-                                    start_byte,
-                                    old_end_byte,
-                                    new_end_byte,
-                                    start_position: Point::new(
-                                        range.start.line as usize,
-                                        range.start.character as usize,
-                                    ),
-                                    old_end_position,
-                                    new_end_position,
-                                });
-                                file.tree = match parse_tree(
-                                    &uri,
-                                    &file.rope.to_string(),
-                                    Some(old_tree),
-                                ) {
-                                    Ok(tree) => Some(tree),
-                                    Err(e) => {
-                                        error!("failed to edit tree: {e:?}");
-                                        None
-                                    }
-                                };
+                        old_tree.edit(&InputEdit {
+                            start_byte,
+                            old_end_byte,
+                            new_end_byte,
+                            start_position: Point::new(
+                                range.start.line as usize,
+                                range.start.character as usize,
+                            ),
+                            old_end_position,
+                            new_end_position,
+                        });
+                        file.tree = match parse_tree(&uri, &file.rope.to_string(), Some(old_tree)) {
+                            Ok(tree) => Some(tree),
+                            Err(e) => {
+                                error!("failed to edit tree: {e}");
+                                None
                             }
-                            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
-                                error!("failed to build tree edit: {e:?}");
-                            }
-                        }
+                        };
                     }
                 }
             } else {
@@ -436,7 +420,7 @@ impl MemoryBackend for FileStore {
                     file.tree = match parse_tree(&uri, &change.text, None) {
                         Ok(tree) => Some(tree),
                         Err(e) => {
-                            error!("failed to parse new tree: {e:?}");
+                            error!("failed to parse new tree: {e}");
                             None
                         }
                     };
@@ -448,18 +432,18 @@ impl MemoryBackend for FileStore {
     }
 
     #[instrument(skip(self))]
-    fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
+    fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> Result<()> {
         for file_rename in params.files {
             let mut file_map = self.file_map.lock();
-            if let Some(rope) = file_map.remove(&file_rename.old_uri) {
-                file_map.insert(file_rename.new_uri, rope);
+            if let Some(rope) = file_map.try_remove(&file_rename.old_uri)? {
+                file_map.try_insert(file_rename.new_uri, rope)?;
             }
         }
         Ok(())
     }
 }
 
-// For teesting use only
+// For testing use only
 #[cfg(test)]
 impl FileStore {
     pub fn default_with_filler_file() -> anyhow::Result<Self> {

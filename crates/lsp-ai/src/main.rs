@@ -1,5 +1,3 @@
-use anyhow::Result;
-
 use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId};
 use lsp_types::{
     request::Completion, CompletionOptions, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
@@ -16,6 +14,7 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 mod config;
 mod crawl;
 mod custom_requests;
+mod error;
 mod memory_backends;
 mod memory_worker;
 mod splitters;
@@ -27,6 +26,7 @@ mod utils;
 
 use config::Config;
 use custom_requests::generation::Generation;
+use error::Result;
 use memory_backends::MemoryBackend;
 use transformer_backends::TransformerBackend;
 use transformer_worker::{CompletionRequest, GenerationRequest, WorkerRequest};

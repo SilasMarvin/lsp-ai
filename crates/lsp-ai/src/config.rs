@@ -1,7 +1,20 @@
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum ConfigError {
+    #[error("completion is disabled")]
+    CompletionDisabled,
+    #[error("`{0}` model not found in `models` config")]
+    ModelNotFound(String),
+    #[error("lsp-ai does not currently provide a default configuration. Please pass a configuration. See https://github.com/SilasMarvin/lsp-ai for configuration options and examples")]
+    NoDefaultConfig,
+    #[error("server configuration must be a valid JSON object")]
+    NotJson,
+    #[error("serde json error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
+}
 
 pub(crate) type Kwargs = HashMap<String, Value>;
 
@@ -315,15 +328,15 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(mut args: Value) -> Result<Self> {
+    pub fn new(mut args: Value) -> Result<Self, ConfigError> {
         // Validate that the models specfied are there so we can unwrap
         let configuration_args = args
             .as_object_mut()
-            .context("Server configuration must be a JSON object")?
+            .ok_or(ConfigError::NotJson)?
             .remove("initializationOptions");
         let valid_args = match configuration_args {
             Some(configuration_args) => serde_json::from_value(configuration_args)?,
-            None => anyhow::bail!("lsp-ai does not currently provide a default configuration. Please pass a configuration. See https://github.com/SilasMarvin/lsp-ai for configuration options and examples"),
+            None => return Err(ConfigError::NoDefaultConfig),
         };
         let client_params: ValidClientParams = serde_json::from_value(args)?;
         Ok(Self {
@@ -344,24 +357,19 @@ impl Config {
         self.config.completion.as_ref().map(|x| &x.post_process)
     }
 
-    pub fn get_completion_transformer_max_requests_per_second(&self) -> anyhow::Result<f32> {
+    pub fn get_completion_transformer_max_requests_per_second(&self) -> Result<f32, ConfigError> {
+        let completion_model = &self
+            .config
+            .completion
+            .as_ref()
+            .ok_or(ConfigError::CompletionDisabled)?
+            .model;
         match &self
             .config
             .models
-            .get(
-                &self
-                    .config
-                    .completion
-                    .as_ref()
-                    .context("Completions is not enabled")?
-                    .model,
-            )
-            .with_context(|| {
-                format!(
-                    "`{}` model not found in `models` config",
-                    &self.config.completion.as_ref().unwrap().model
-                )
-            })? {
+            .get(completion_model)
+            .ok_or_else(|| ConfigError::ModelNotFound(completion_model.to_owned()))?
+        {
             #[cfg(feature = "llama_cpp")]
             ValidModel::LLaMACPP(llama_cpp) => Ok(llama_cpp.max_requests_per_second),
             ValidModel::OpenAI(open_ai) => Ok(open_ai.max_requests_per_second),

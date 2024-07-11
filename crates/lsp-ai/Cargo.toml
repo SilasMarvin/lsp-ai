@@ -33,13 +33,16 @@ tokio = { version = "1.36.0", features = ["rt-multi-thread", "time"] }
 indexmap = "2.2.5"
 async-trait = "0.1.78"
 tree-sitter = "0.22"
-utils-tree-sitter = { path = "../utils-tree-sitter", features = ["all"], version = "0.1.0" }
+utils-tree-sitter = { path = "../utils-tree-sitter", features = [
+  "all",
+], version = "0.1.0" }
 splitter-tree-sitter = { path = "../splitter-tree-sitter", version = "0.1.0" }
 text-splitter = { version = "0.13.3" }
 md5 = "0.7.0"
+thiserror = "1"
 
 [build-dependencies]
-cc="*"
+cc = "*"
 
 [features]
 default = []

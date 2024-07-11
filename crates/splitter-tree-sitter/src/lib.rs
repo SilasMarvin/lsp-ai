@@ -2,15 +2,11 @@ use thiserror::Error;
 use tree_sitter::{Tree, TreeCursor};
 
 #[derive(Error, Debug)]
-pub enum NewError {
-    #[error("chunk_size must be greater than chunk_overlap")]
-    SizeOverlapError,
-}
-
-#[derive(Error, Debug)]
-pub enum SplitError {
+pub enum SplitterError {
+    #[error("chunk_size ({0}) must be greater than chunk_overlap ({1})")]
+    SizeOverlap(usize, usize),
     #[error("converting utf8 to str")]
-    Utf8Error(#[from] core::str::Utf8Error),
+    Utf8(#[from] core::str::Utf8Error),
 }
 
 pub struct TreeSitterCodeSplitter {
@@ -44,9 +40,9 @@ impl<'a> Chunk<'a> {
 }
 
 impl TreeSitterCodeSplitter {
-    pub fn new(chunk_size: usize, chunk_overlap: usize) -> Result<Self, NewError> {
+    pub fn new(chunk_size: usize, chunk_overlap: usize) -> Result<Self, SplitterError> {
         if chunk_overlap > chunk_size {
-            Err(NewError::SizeOverlapError)
+            Err(SplitterError::SizeOverlap(chunk_size, chunk_overlap))
         } else {
             Ok(Self {
                 chunk_size,
@@ -55,7 +51,7 @@ impl TreeSitterCodeSplitter {
         }
     }
 
-    pub fn split<'c>(&self, tree: &Tree, utf8: &'c [u8]) -> Result<Vec<Chunk<'c>>, SplitError> {
+    pub fn split<'c>(&self, tree: &Tree, utf8: &'c [u8]) -> Result<Vec<Chunk<'c>>, SplitterError> {
         let cursor = tree.walk();
         Ok(self
             .split_recursive(cursor, utf8)?
@@ -66,7 +62,7 @@ impl TreeSitterCodeSplitter {
             .try_fold(vec![], |mut acc, current| {
                 if acc.is_empty() {
                     acc.push(current);
-                    Ok::<_, SplitError>(acc)
+                    Ok::<_, SplitterError>(acc)
                 } else {
                     if acc.last().as_ref().unwrap().text.len() + current.text.len()
                         < self.chunk_size
@@ -94,7 +90,7 @@ impl TreeSitterCodeSplitter {
         &self,
         mut cursor: TreeCursor<'_>,
         utf8: &'c [u8],
-    ) -> Result<Vec<Chunk<'c>>, SplitError> {
+    ) -> Result<Vec<Chunk<'c>>, SplitterError> {
         let node = cursor.node();
         let text = node.utf8_text(utf8)?;
 

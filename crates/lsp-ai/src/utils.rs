@@ -58,17 +58,3 @@ pub(crate) fn format_context_code(context: &str, code: &str) -> String {
 pub(crate) fn chunk_to_id(uri: &str, chunk: &Chunk) -> String {
     format!("{uri}#{}-{}", chunk.range.start_byte, chunk.range.end_byte)
 }
-
-pub(crate) fn parse_tree(
-    uri: &str,
-    contents: &str,
-    old_tree: Option<&Tree>,
-) -> anyhow::Result<Tree> {
-    let path = std::path::Path::new(uri);
-    let extension = path.extension().map(|x| x.to_string_lossy());
-    let extension = extension.as_deref().unwrap_or("");
-    let mut parser = utils_tree_sitter::get_parser_for_extension(extension)?;
-    parser
-        .parse(contents, old_tree)
-        .with_context(|| format!("parsing tree failed for {uri}"))
-}
