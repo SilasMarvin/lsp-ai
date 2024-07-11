@@ -1,17 +1,19 @@
 use thiserror::Error;
-use tree_sitter::{LanguageError, Parser};
+use tree_sitter::{LanguageError, Parser, Tree};
 
 #[derive(Error, Debug)]
-pub enum GetParserError {
-    #[error("no parser found for extension")]
-    NoParserFoundForExtension(String),
-    #[error("no parser found for extension")]
-    NoLanguageFoundForExtension(String),
-    #[error("loading grammer")]
+pub enum TreeSitterUtilsError {
+    #[error("loading grammer error: {0}")]
     LoadingGrammer(#[from] LanguageError),
+    #[error("no parser found for extension: {0}")]
+    NoParserFoundForExtension(String),
+    #[error("no parser found for extension: {0}")]
+    NoLanguageFoundForExtension(String),
+    #[error("failed to parse tree for: {0}")]
+    Parsing(String),
 }
 
-fn get_extension_for_language(extension: &str) -> Result<String, GetParserError> {
+fn get_extension_for_language(extension: &str) -> Result<String, TreeSitterUtilsError> {
     Ok(match extension {
         "py" => "Python",
         "rs" => "Rust",
@@ -32,7 +34,7 @@ fn get_extension_for_language(extension: &str) -> Result<String, GetParserError>
         "lua" => "Lua",
         "ml" => "OCaml",
         _ => {
-            return Err(GetParserError::NoLanguageFoundForExtension(
+            return Err(TreeSitterUtilsError::NoLanguageFoundForExtension(
                 extension.to_string(),
             ))
         }
@@ -40,7 +42,7 @@ fn get_extension_for_language(extension: &str) -> Result<String, GetParserError>
     .to_string())
 }
 
-pub fn get_parser_for_extension(extension: &str) -> Result<Parser, GetParserError> {
+pub fn get_parser_for_extension(extension: &str) -> Result<Parser, TreeSitterUtilsError> {
     let language = get_extension_for_language(extension)?;
     let mut parser = Parser::new();
     match language.as_str() {
@@ -81,10 +83,24 @@ pub fn get_parser_for_extension(extension: &str) -> Result<Parser, GetParserErro
         #[cfg(any(feature = "all", feature = "ocaml"))]
         "OCaml" => parser.set_language(&tree_sitter_ocaml::language_ocaml())?,
         _ => {
-            return Err(GetParserError::NoParserFoundForExtension(
+            return Err(TreeSitterUtilsError::NoParserFoundForExtension(
                 language.to_string(),
             ))
         }
     }
     Ok(parser)
+}
+
+pub fn parse_tree(
+    uri: &str,
+    contents: &str,
+    old_tree: Option<&Tree>,
+) -> Result<Tree, TreeSitterUtilsError> {
+    let path = std::path::Path::new(uri);
+    let extension = path.extension().map(|x| x.to_string_lossy());
+    let extension = extension.as_deref().unwrap_or("");
+    let mut parser = get_parser_for_extension(extension)?;
+    parser
+        .parse(contents, old_tree)
+        .ok_or_else(|| TreeSitterUtilsError::Parsing(uri.to_owned()))
 }
