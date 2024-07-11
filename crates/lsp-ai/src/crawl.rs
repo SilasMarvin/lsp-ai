@@ -4,6 +4,12 @@ use tracing::{error, instrument};
 
 use crate::config::{self, Config};
 
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum CrawlError {
+    #[error("Skipping crawling as root_uri does not begin with file://: {0}")]
+    InvalidRootUri(String),
+}
+
 pub(crate) struct Crawl {
     crawl_config: config::Crawl,
     config: Config,
@@ -26,14 +32,14 @@ impl Crawl {
         &mut self,
         triggered_file: Option<String>,
         mut f: impl FnMut(&config::Crawl, &str) -> anyhow::Result<bool>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), CrawlError> {
         if self.crawled_all {
             return Ok(());
         }
 
         if let Some(root_uri) = &self.config.client_params.root_uri {
             if !root_uri.starts_with("file://") {
-                anyhow::bail!("Skipping crawling as root_uri does not begin with file://")
+                return Err(CrawlError::InvalidRootUri(root_uri.to_owned()));
             }
 
             let extension_to_match = triggered_file

@@ -9,6 +9,28 @@ use crate::config::{Config, ValidMemoryBackend};
 pub(crate) mod file_store;
 mod postgresml;
 
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum MemoryBackendError {
+    #[error("failed to convert Prompt into {0}")]
+    ConvertPrompt(String),
+    #[error("crawl error: {0}")]
+    Crawl(#[from] crate::crawl::CrawlError),
+    #[error("file not found: {0}")]
+    FileNotFound(String),
+    #[error("file store error: {0}")]
+    FileStore(#[from] file_store::FileStoreError),
+    #[error("line out of bounds: {0}")]
+    LineOutOfBounds(usize),
+    #[error("file store error: {0}")]
+    PostgresML(#[from] postgresml::PostgresMLError),
+    #[error("ropey error: {0}")]
+    Ropey(#[from] ropey::Error),
+    #[error("slice range out of bounds: {0}..{1}")]
+    SliceRangeOutOfBounds(usize, usize),
+}
+
+pub(crate) type Result<T> = std::result::Result<T, MemoryBackendError>;
+
 #[derive(Clone, Debug)]
 pub enum PromptType {
     ContextAndCode,
@@ -65,34 +87,38 @@ pub enum Prompt {
 }
 
 impl<'a> TryFrom<&'a Prompt> for &'a ContextAndCodePrompt {
-    type Error = anyhow::Error;
+    type Error = MemoryBackendError;
 
-    fn try_from(value: &'a Prompt) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a Prompt) -> Result<Self> {
         match value {
             Prompt::ContextAndCode(code_and_context) => Ok(code_and_context),
-            _ => anyhow::bail!("cannot convert Prompt into CodeAndContextPrompt"),
+            _ => Err(MemoryBackendError::ConvertPrompt(
+                "CodeAndContextPrompt".to_owned(),
+            )),
         }
     }
 }
 
 impl TryFrom<Prompt> for ContextAndCodePrompt {
-    type Error = anyhow::Error;
+    type Error = MemoryBackendError;
 
-    fn try_from(value: Prompt) -> Result<Self, Self::Error> {
+    fn try_from(value: Prompt) -> Result<Self> {
         match value {
             Prompt::ContextAndCode(code_and_context) => Ok(code_and_context),
-            _ => anyhow::bail!("cannot convert Prompt into CodeAndContextPrompt"),
+            _ => Err(MemoryBackendError::ConvertPrompt(
+                "CodeAndContextPrompt".to_owned(),
+            )),
         }
     }
 }
 
 impl TryFrom<Prompt> for FIMPrompt {
-    type Error = anyhow::Error;
+    type Error = MemoryBackendError;
 
-    fn try_from(value: Prompt) -> Result<Self, Self::Error> {
+    fn try_from(value: Prompt) -> Result<Self> {
         match value {
             Prompt::FIM(fim) => Ok(fim),
-            _ => anyhow::bail!("cannot convert Prompt into FIMPrompt"),
+            _ => Err(MemoryBackendError::ConvertPrompt("FIMPrompt".to_owned())),
         }
     }
 }
@@ -110,25 +136,25 @@ impl<'a> TryFrom<&'a Prompt> for &'a FIMPrompt {
 
 #[async_trait::async_trait]
 pub trait MemoryBackend {
-    async fn init(&self) -> anyhow::Result<()> {
+    async fn init(&self) -> Result<()> {
         Ok(())
     }
-    fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
-    fn changed_text_document(&self, params: DidChangeTextDocumentParams) -> anyhow::Result<()>;
-    fn renamed_files(&self, params: RenameFilesParams) -> anyhow::Result<()>;
-    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String>;
+    fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> Result<()>;
+    fn changed_text_document(&self, params: DidChangeTextDocumentParams) -> Result<()>;
+    fn renamed_files(&self, params: RenameFilesParams) -> Result<()>;
+    fn get_filter_text(&self, position: &TextDocumentPositionParams) -> Result<String>;
     async fn build_prompt(
         &self,
         position: &TextDocumentPositionParams,
         prompt_type: PromptType,
         params: &Value,
-    ) -> anyhow::Result<Prompt>;
+    ) -> Result<Prompt>;
 }
 
 impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
-    type Error = anyhow::Error;
+    type Error = MemoryBackendError;
 
-    fn try_from(configuration: Config) -> Result<Self, Self::Error> {
+    fn try_from(configuration: Config) -> Result<Self> {
         match configuration.config.memory.clone() {
             ValidMemoryBackend::FileStore(file_store_config) => Ok(Box::new(
                 file_store::FileStore::new(file_store_config, configuration)?,
