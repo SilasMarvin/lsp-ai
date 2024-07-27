@@ -8,12 +8,21 @@ use crate::config;
 use super::{normalize, EmbeddingModel, EmbeddingPurpose};
 
 #[derive(Deserialize)]
-pub struct EmbedResponse {
-    embedding: Option<Vec<f32>>,
-    error: Option<Value>,
-    #[serde(default)]
-    #[serde(flatten)]
-    other: HashMap<String, Value>,
+pub struct Embed {
+    embedding: Vec<f32>,
+}
+
+#[derive(Deserialize)]
+pub struct EmbedError {
+    error: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum EmbedResponse {
+    Success(Embed),
+    Error(EmbedError),
+    Other(HashMap<String, Value>),
 }
 
 pub struct Ollama {
@@ -58,15 +67,12 @@ impl EmbeddingModel for Ollama {
                 .await?
                 .json()
                 .await?;
-            if let Some(error) = res.error {
-                anyhow::bail!("{:?}", error.to_string())
-            } else if let Some(embedding) = res.embedding {
-                results.push(normalize(embedding));
-            } else {
-                anyhow::bail!(
-                    "Unknown error while making request to Ollama: {:?}",
-                    res.other
-                )
+            match res {
+                EmbedResponse::Success(embedding) => results.push(normalize(embedding.embedding)),
+                EmbedResponse::Error(error) => anyhow::bail!("{:?}", error.error.to_string()),
+                EmbedResponse::Other(other) => {
+                    anyhow::bail!("Unknown error while making request to Ollama: {:?}", other)
+                }
             }
         }
         Ok(results)
