@@ -124,12 +124,12 @@ impl StoredChunk {
     }
 }
 
-struct VS {
+struct VectorStoreInner {
     store: IndexMap<String, Vec<StoredChunk>>,
     data_type: VectorDataType,
 }
 
-impl VS {
+impl VectorStoreInner {
     fn new(data_type: VectorDataType) -> Self {
         Self {
             data_type,
@@ -334,7 +334,7 @@ pub struct VectorStore {
     crawl: Option<Arc<Mutex<Crawl>>>,
     splitter: Arc<Box<dyn Splitter + Send + Sync>>,
     embedding_model: Arc<Box<dyn EmbeddingModel + Send + Sync>>,
-    vector_store: Arc<RwLock<VS>>,
+    vector_store: Arc<RwLock<VectorStoreInner>>,
     config: Config,
     debounce_tx: Sender<String>,
 }
@@ -357,7 +357,9 @@ impl VectorStore {
             config.clone(),
             AdditionalFileStoreParams::new(splitter.does_use_tree_sitter()),
         )?);
-        let vector_store = Arc::new(RwLock::new(VS::new(vector_store_config.data_type)));
+        let vector_store = Arc::new(RwLock::new(VectorStoreInner::new(
+            vector_store_config.data_type,
+        )));
 
         // Debounce document changes to reduce the number of embeddings we perform
         let (debounce_tx, debounce_rx) = mpsc::channel::<String>();
@@ -1002,7 +1004,7 @@ assert multiply_two_numbers(2, 3) == 6
     #[test]
     #[cfg(feature = "stress_test")]
     fn stress_test_f32() -> anyhow::Result<()> {
-        let mut vector_store = VS::new(VectorDataType::F32);
+        let mut vector_store = VectorStoreInner::new(VectorDataType::F32);
         let embedding: Vec<f32> = (0..1024).map(|x| x as f32).collect();
         // Time insert
         // Insert 100_000 files each with 10 chunks
@@ -1037,7 +1039,7 @@ assert multiply_two_numbers(2, 3) == 6
     #[test]
     #[cfg(feature = "stress_test")]
     fn stress_test_binary() -> anyhow::Result<()> {
-        let mut vector_store = VS::new(VectorDataType::Binary);
+        let mut vector_store = VectorStoreInner::new(VectorDataType::Binary);
         let embedding: Vec<f32> = (0..1024).map(|x| x as f32).collect();
         // Time insert
         // Insert 1_000_000 files each with 10 chunks
