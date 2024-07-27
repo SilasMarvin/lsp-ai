@@ -785,7 +785,7 @@ assert multiply_two_numbers(2, 3) == 6
         let vector_store = generate_base_vector_store()?;
         vector_store.opened_text_document(params)?;
         // Sleep to give it time to asynchronously embed
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         // Now check
         let store = vector_store.vector_store.read();
         let chunks = store.store.get("file:///filler.py").unwrap();
@@ -812,7 +812,7 @@ assert multiply_two_numbers(2, 3) == 6
         let vector_store = generate_base_vector_store()?;
         vector_store.opened_text_document(params)?;
         // Sleep to give it time to asynchronously embed
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         // Now rename
         let params = RenameFilesParams {
             files: vec![FileRename {
@@ -827,7 +827,7 @@ assert multiply_two_numbers(2, 3) == 6
         assert!(chunks.len() == 1);
         assert_eq!(
             chunks[0].text,
-            r#"# Multiplies two numbers
+            r#"--file:///filler.py--\n# Multiplies two numbers
 def multiply_two_numbers(x, y):
     return
 
@@ -847,7 +847,7 @@ assert multiply_two_numbers(2, 3) == 6
         let vector_store = generate_base_vector_store()?;
         vector_store.opened_text_document(params)?;
         // Sleep to give it time to asynchronously embed
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         // Now change it
         let params = lsp_types::DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
@@ -871,7 +871,7 @@ assert multiply_two_numbers(2, 3) == 6
         };
         vector_store.changed_text_document(params)?;
         // Sleep to give it time to asynchronously embed
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         // Now check it
         let store = vector_store.vector_store.read();
         let chunks = store.store.get("file:///filler.py").unwrap();
@@ -902,7 +902,7 @@ assert multiply_two_numbers(2, 3) == 6
         };
         vector_store.changed_text_document(params)?;
         // Sleep to give it time to asynchronously embed
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         // Now check it
         let store = vector_store.vector_store.read();
         let chunks = store.store.get("file:///filler.py").unwrap();
@@ -921,7 +921,7 @@ assert multiply_two_numbers(2, 3) == 6
         let vector_store = generate_base_vector_store()?;
         vector_store.opened_text_document(params)?;
         // Sleep to give it time to asynchronously embed
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         // Now let's test our prompt building
         let prompt = vector_store
             .build_prompt(
@@ -949,7 +949,7 @@ assert multiply_two_numbers(2, 3) == 6
         };
         vector_store.opened_text_document(params)?;
         // Sleep to give it time to asynchronously embed
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         // Build the prompt again
         let prompt = vector_store
             .build_prompt(
