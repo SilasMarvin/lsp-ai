@@ -59,11 +59,15 @@ impl GeminiContent {
 #[serde(deny_unknown_fields)]
 pub(crate) struct GeminiGenerationConfig {
     #[serde(default)]
+    #[serde(rename = "stopSequences")]
     pub(crate) stop_sequences: Vec<String>,
+    #[serde(rename = "maxOutputTokens")]
     #[serde(default = "max_tokens_default")]
     pub(crate) max_output_tokens: usize,
     pub(crate) temperature: Option<f32>,
+    #[serde(rename = "topP")]
     pub(crate) top_p: Option<f32>,
+    #[serde(rename = "topK")]
     pub(crate) top_k: Option<f32>,
 }
 
@@ -72,7 +76,9 @@ pub(crate) struct GeminiGenerationConfig {
 #[serde(rename = "camelCase")]
 pub(crate) struct GeminiRunParams {
     contents: Vec<GeminiContent>,
+    #[serde(rename = "systemInstruction")]
     system_instruction: GeminiContent,
+    #[serde(rename = "generationConfig")]
     generation_config: Option<GeminiGenerationConfig>,
 }
 

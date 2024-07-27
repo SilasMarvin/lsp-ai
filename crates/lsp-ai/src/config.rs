@@ -105,7 +105,7 @@ pub enum VectorDataType {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct VectorStore {
+pub(crate) struct VectorStore {
     pub crawl: Option<Crawl>,
     #[serde(default)]
     pub splitter: ValidSplitter,
@@ -433,7 +433,7 @@ impl Config {
         }
     }
 
-    pub fn default_with_vector_store(vector_store: VectorStore) -> Self {
+    pub(crate) fn default_with_vector_store(vector_store: VectorStore) -> Self {
         Self {
             config: ValidConfig {
                 memory: ValidMemoryBackend::VectorStore(vector_store),

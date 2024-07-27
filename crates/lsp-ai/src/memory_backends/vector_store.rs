@@ -827,7 +827,8 @@ assert multiply_two_numbers(2, 3) == 6
         assert!(chunks.len() == 1);
         assert_eq!(
             chunks[0].text,
-            r#"--file:///filler.py--\n# Multiplies two numbers
+            r#"--file:///filler.py--
+# Multiplies two numbers
 def multiply_two_numbers(x, y):
     return
 
