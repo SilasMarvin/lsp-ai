@@ -1,8 +1,8 @@
 use anyhow::Context;
 use lsp_server::{Connection, Message, RequestId, Response};
 use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionList, CompletionParams, CompletionResponse,
-    Position, Range, TextEdit,
+    CodeActionParams, CompletionItem, CompletionItemKind, CompletionList, CompletionParams,
+    CompletionResponse, Position, Range, TextEdit,
 };
 use std::collections::HashMap;
 use std::sync::mpsc::RecvTimeoutError;
@@ -58,10 +58,23 @@ impl GenerationStreamRequest {
 }
 
 #[derive(Clone, Debug)]
+pub struct CodeActionRequestRequest {
+    id: RequestId,
+    params: CodeActionParams,
+}
+
+impl CodeActionRequestRequest {
+    pub fn new(id: RequestId, params: CodeActionParams) -> Self {
+        Self { id, params }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum WorkerRequest {
     Completion(CompletionRequest),
     Generation(GenerationRequest),
     GenerationStream(GenerationStreamRequest),
+    CodeActionRequest(CodeActionRequestRequest),
 }
 
 impl WorkerRequest {
@@ -70,6 +83,7 @@ impl WorkerRequest {
             WorkerRequest::Completion(r) => r.id.clone(),
             WorkerRequest::Generation(r) => r.id.clone(),
             WorkerRequest::GenerationStream(r) => r.id.clone(),
+            WorkerRequest::CodeActionRequest(r) => r.id.clone(),
         }
     }
 }
@@ -297,7 +311,13 @@ async fn generate_response(
         WorkerRequest::GenerationStream(_) => {
             anyhow::bail!("Streaming is not yet supported")
         }
+        WorkerRequest::CodeActionRequest(request) => do_code_action(&request).await,
     }
+}
+
+async fn do_code_action(request: &CodeActionRequestRequest) -> anyhow::Result<Response> {
+    eprintln!("WE GOT HERE: {:?}", request);
+    todo!()
 }
 
 async fn do_completion(
