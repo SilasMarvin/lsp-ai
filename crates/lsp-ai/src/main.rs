@@ -16,6 +16,7 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 mod config;
 mod crawl;
 mod custom_requests;
+mod embedding_models;
 mod memory_backends;
 mod memory_worker;
 mod splitters;

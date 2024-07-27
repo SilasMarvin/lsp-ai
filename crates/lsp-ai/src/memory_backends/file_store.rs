@@ -1,7 +1,7 @@
 use anyhow::Context;
 use indexmap::IndexSet;
 use lsp_types::TextDocumentPositionParams;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use ropey::Rope;
 use serde_json::Value;
 use std::{collections::HashMap, io::Read};
@@ -49,7 +49,7 @@ impl File {
 
 pub(crate) struct FileStore {
     params: AdditionalFileStoreParams,
-    file_map: Mutex<HashMap<String, File>>,
+    file_map: RwLock<HashMap<String, File>>,
     accessed_files: Mutex<IndexSet<String>>,
     crawl: Option<Mutex<Crawl>>,
 }
@@ -65,7 +65,7 @@ impl FileStore {
             .map(|x| Mutex::new(Crawl::new(x, config.clone())));
         let s = Self {
             params: AdditionalFileStoreParams::default(),
-            file_map: Mutex::new(HashMap::new()),
+            file_map: RwLock::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
             crawl,
         };
@@ -86,7 +86,7 @@ impl FileStore {
             .map(|x| Mutex::new(Crawl::new(x, config.clone())));
         let s = Self {
             params,
-            file_map: Mutex::new(HashMap::new()),
+            file_map: RwLock::new(HashMap::new()),
             accessed_files: Mutex::new(IndexSet::new()),
             crawl,
         };
@@ -111,7 +111,7 @@ impl FileStore {
             None
         };
         self.file_map
-            .lock()
+            .write()
             .insert(uri.to_string(), File::new(Rope::from_str(&contents), tree));
         self.accessed_files.lock().insert(uri.to_string());
     }
@@ -130,7 +130,7 @@ impl FileStore {
                     }
                     // This means it has been opened before
                     let insert_uri = format!("file:///{path}");
-                    if self.file_map.lock().contains_key(&insert_uri) {
+                    if self.file_map.read().contains_key(&insert_uri) {
                         return Ok(true);
                     }
                     // Open the file and see if it is small enough to read
@@ -163,7 +163,7 @@ impl FileStore {
         let current_document_uri = position.text_document.uri.to_string();
         let mut rope = self
             .file_map
-            .lock()
+            .read()
             .get(&current_document_uri)
             .context("Error file not found")?
             .rope
@@ -181,7 +181,7 @@ impl FileStore {
             if needed == 0 || !pull_from_multiple_files {
                 break;
             }
-            let file_map = self.file_map.lock();
+            let file_map = self.file_map.read();
             let r = &file_map.get(file).context("Error file not found")?.rope;
             let slice_max = needed.min(r.len_chars() + 1);
             let rope_str_slice = r
@@ -202,7 +202,7 @@ impl FileStore {
     ) -> anyhow::Result<String> {
         let rope = self
             .file_map
-            .lock()
+            .read()
             .get(position.text_document.uri.as_str())
             .context("Error file not found")?
             .rope
@@ -275,19 +275,16 @@ impl FileStore {
         })
     }
 
-    pub(crate) fn file_map(&self) -> &Mutex<HashMap<String, File>> {
+    pub fn file_map(&self) -> &RwLock<HashMap<String, File>> {
         &self.file_map
     }
 
-    pub(crate) fn contains_file(&self, uri: &str) -> bool {
-        self.file_map.lock().contains_key(uri)
+    pub fn contains_file(&self, uri: &str) -> bool {
+        self.file_map.read().contains_key(uri)
     }
 
-    pub(crate) fn position_to_byte(
-        &self,
-        position: &TextDocumentPositionParams,
-    ) -> anyhow::Result<usize> {
-        let file_map = self.file_map.lock();
+    pub fn position_to_byte(&self, position: &TextDocumentPositionParams) -> anyhow::Result<usize> {
+        let file_map = self.file_map.read();
         let uri = position.text_document.uri.to_string();
         let file = file_map
             .get(&uri)
@@ -307,7 +304,7 @@ impl MemoryBackend for FileStore {
     fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
         let rope = self
             .file_map
-            .lock()
+            .read()
             .get(position.text_document.uri.as_str())
             .context("Error file not found")?
             .rope
@@ -351,7 +348,7 @@ impl MemoryBackend for FileStore {
         params: lsp_types::DidChangeTextDocumentParams,
     ) -> anyhow::Result<()> {
         let uri = params.text_document.uri.to_string();
-        let mut file_map = self.file_map.lock();
+        let mut file_map = self.file_map.write();
         let file = file_map
             .get_mut(&uri)
             .with_context(|| format!("Trying to get file that does not exist {uri}"))?;
@@ -450,7 +447,7 @@ impl MemoryBackend for FileStore {
     #[instrument(skip(self))]
     fn renamed_files(&self, params: lsp_types::RenameFilesParams) -> anyhow::Result<()> {
         for file_rename in params.files {
-            let mut file_map = self.file_map.lock();
+            let mut file_map = self.file_map.write();
             if let Some(rope) = file_map.remove(&file_rename.old_uri) {
                 file_map.insert(file_rename.new_uri, rope);
             }
@@ -459,7 +456,7 @@ impl MemoryBackend for FileStore {
     }
 }
 
-// For teesting use only
+// For testing use only
 #[cfg(test)]
 impl FileStore {
     pub fn default_with_filler_file() -> anyhow::Result<Self> {
@@ -537,7 +534,7 @@ mod tests {
         file_store.opened_text_document(params)?;
         let file = file_store
             .file_map
-            .lock()
+            .read()
             .get("file:///filler/")
             .unwrap()
             .clone();
@@ -563,7 +560,7 @@ mod tests {
 
         let file = file_store
             .file_map
-            .lock()
+            .read()
             .get("file:///filler2/")
             .unwrap()
             .clone();
@@ -604,7 +601,7 @@ mod tests {
         file_store.changed_text_document(params)?;
         let file = file_store
             .file_map
-            .lock()
+            .read()
             .get("file:///filler/")
             .unwrap()
             .clone();
@@ -624,7 +621,7 @@ mod tests {
         file_store.changed_text_document(params)?;
         let file = file_store
             .file_map
-            .lock()
+            .read()
             .get("file:///filler/")
             .unwrap()
             .clone();
@@ -639,12 +636,12 @@ mod tests {
             None,
             Some(
                 r#"Document Top
-Here is a more complicated document
+    Here is a more complicated document
 
-Some text
+    Some text
 
-The end with a trailing new line
-"#,
+    The end with a trailing new line
+    "#,
             ),
         );
 
@@ -695,12 +692,12 @@ The end with a trailing new line
         assert_eq!(
             prompt.suffix,
             r#"op
-Here is a more complicated document
+    Here is a more complicated document
 
-Some text
+    Some text
 
-The end with a trailing new line
-"#
+    The end with a trailing new line
+    "#
         );
 
         // Test chat
@@ -724,12 +721,12 @@ The end with a trailing new line
         let prompt: ContextAndCodePrompt = prompt.try_into()?;
         assert_eq!(prompt.context, "");
         let text = r#"Document T<CURSOR>op
-Here is a more complicated document
+    Here is a more complicated document
 
-Some text
+    Some text
 
-The end with a trailing new line
-"#
+    The end with a trailing new line
+    "#
         .to_string();
         assert_eq!(text, prompt.code);
 
@@ -738,12 +735,12 @@ The end with a trailing new line
             Some("file:///filler2"),
             Some(
                 r#"Document Top2
-Here is a more complicated document
+    Here is a more complicated document
 
-Some text
+    Some text
 
-The end with a trailing new line
-"#,
+    The end with a trailing new line
+    "#,
             ),
         );
         let params = lsp_types::DidOpenTextDocumentParams {
@@ -881,7 +878,7 @@ fn main() {
             }],
         };
         file_store.changed_text_document(params)?;
-        let file = file_store.file_map.lock().get(uri).unwrap().clone();
+        let file = file_store.file_map.read().get(uri).unwrap().clone();
         assert_eq!(file.tree.unwrap().root_node().to_sexp(), "(source_file (attribute_item (attribute (identifier) arguments: (token_tree (identifier)))) (struct_item name: (type_identifier) body: (field_declaration_list (field_declaration name: (field_identifier) type: (primitive_type)) (field_declaration name: (field_identifier) type: (primitive_type)))) (impl_item type: (type_identifier) body: (declaration_list (function_item name: (identifier) parameters: (parameters (self_parameter (self))) return_type: (primitive_type) body: (block (binary_expression left: (field_expression value: (self) field: (field_identifier)) right: (field_expression value: (self) field: (field_identifier))))))) (function_item name: (identifier) parameters: (parameters) body: (block (let_declaration pattern: (identifier) value: (struct_expression name: (type_identifier) body: (field_initializer_list (field_initializer field: (field_identifier) value: (integer_literal)) (field_initializer field: (field_identifier) value: (integer_literal))))) (expression_statement (macro_invocation macro: (identifier) (token_tree (string_literal (string_content)) (identifier) (identifier) (token_tree)))))))");
 
         // Test delete
@@ -906,7 +903,7 @@ fn main() {
             }],
         };
         file_store.changed_text_document(params)?;
-        let file = file_store.file_map.lock().get(uri).unwrap().clone();
+        let file = file_store.file_map.read().get(uri).unwrap().clone();
         assert_eq!(file.tree.unwrap().root_node().to_sexp(), "(source_file (function_item name: (identifier) parameters: (parameters) body: (block (let_declaration pattern: (identifier) value: (struct_expression name: (type_identifier) body: (field_initializer_list (field_initializer field: (field_identifier) value: (integer_literal)) (field_initializer field: (field_identifier) value: (integer_literal))))) (expression_statement (macro_invocation macro: (identifier) (token_tree (string_literal (string_content)) (identifier) (identifier) (token_tree)))))))");
 
         // Test replace
@@ -922,7 +919,7 @@ fn main() {
             }],
         };
         file_store.changed_text_document(params)?;
-        let file = file_store.file_map.lock().get(uri).unwrap().clone();
+        let file = file_store.file_map.read().get(uri).unwrap().clone();
         assert_eq!(file.tree.unwrap().root_node().to_sexp(), "(source_file (function_item name: (identifier) parameters: (parameters) body: (block)))");
 
         Ok(())

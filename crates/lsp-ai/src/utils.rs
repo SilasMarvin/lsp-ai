@@ -72,3 +72,20 @@ pub(crate) fn parse_tree(
         .parse(contents, old_tree)
         .with_context(|| format!("parsing tree failed for {uri}"))
 }
+
+pub fn format_file_chunk(uri: &str, excerpt: &str, root_uri: Option<&str>) -> String {
+    let path = match root_uri {
+        Some(root_uri) => {
+            if uri.starts_with(root_uri) {
+                &uri[root_uri.chars().count()..]
+            } else {
+                uri
+            }
+        }
+        None => uri,
+    };
+    format!(
+        r#"--{path}--
+{excerpt}"#,
+    )
+}

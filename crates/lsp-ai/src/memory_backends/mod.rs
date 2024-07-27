@@ -8,6 +8,7 @@ use crate::config::{Config, ValidMemoryBackend};
 
 pub(crate) mod file_store;
 mod postgresml;
+mod vector_store;
 
 #[derive(Clone, Debug)]
 pub enum PromptType {
@@ -135,6 +136,9 @@ impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
             )),
             ValidMemoryBackend::PostgresML(postgresml_config) => Ok(Box::new(
                 postgresml::PostgresML::new(postgresml_config, configuration)?,
+            )),
+            ValidMemoryBackend::VectorStore(vector_store_config) => Ok(Box::new(
+                vector_store::VectorStore::new(vector_store_config, configuration)?,
             )),
         }
     }

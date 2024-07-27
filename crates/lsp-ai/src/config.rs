@@ -25,10 +25,11 @@ impl Default for PostProcess {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
 pub enum ValidSplitter {
     #[serde(rename = "tree_sitter")]
     TreeSitter(TreeSitter),
-    #[serde(rename = "text_sitter")]
+    #[serde(rename = "text_splitter")]
     TextSplitter(TextSplitter),
 }
 
@@ -69,10 +70,55 @@ pub struct TextSplitter {
     pub chunk_size: usize,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct EmbeddingPrefix {
+    #[serde(default)]
+    pub storage: String,
+    #[serde(default)]
+    pub retrieval: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OllamaEmbeddingModel {
+    // The generate endpoint, default: 'http://localhost:11434/api/embeddings'
+    pub endpoint: Option<String>,
+    // The model name
+    pub model: String,
+    // The prefix to apply to the embeddings
+    #[serde(default)]
+    pub prefix: EmbeddingPrefix,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+pub enum ValidEmbeddingModel {
+    #[serde(rename = "ollama")]
+    Ollama(OllamaEmbeddingModel),
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub enum VectorDataType {
+    #[serde(rename = "f32")]
+    F32,
+    #[serde(rename = "binary")]
+    Binary,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct VectorStore {
+    pub crawl: Option<Crawl>,
+    #[serde(default)]
+    pub splitter: ValidSplitter,
+    pub embedding_model: ValidEmbeddingModel,
+    pub data_type: VectorDataType,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) enum ValidMemoryBackend {
     #[serde(rename = "file_store")]
     FileStore(FileStore),
+    #[serde(rename = "vector_store")]
+    VectorStore(VectorStore),
     #[serde(rename = "postgresml")]
     PostgresML(PostgresML),
 }
@@ -380,6 +426,17 @@ impl Config {
         Self {
             config: ValidConfig {
                 memory: ValidMemoryBackend::FileStore(FileStore { crawl: None }),
+                models: HashMap::new(),
+                completion: None,
+            },
+            client_params: ValidClientParams { root_uri: None },
+        }
+    }
+
+    pub(crate) fn default_with_vector_store(vector_store: VectorStore) -> Self {
+        Self {
+            config: ValidConfig {
+                memory: ValidMemoryBackend::VectorStore(vector_store),
                 models: HashMap::new(),
                 completion: None,
             },

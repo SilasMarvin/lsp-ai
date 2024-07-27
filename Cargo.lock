@@ -981,6 +981,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1297,6 +1306,7 @@ checksum = "7b0b929d511467233429c45a44ac1dcaa21ba0f5ba11e4879e6ed28ddb4f9df4"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.3",
+ "rayon",
  "serde",
 ]
 
@@ -1563,6 +1573,7 @@ dependencies = [
  "async-trait",
  "cc",
  "directories",
+ "fxhash",
  "hf-hub",
  "ignore",
  "indexmap 2.2.5",
@@ -1572,13 +1583,16 @@ dependencies = [
  "md5",
  "minijinja",
  "once_cell",
+ "ordered-float",
  "parking_lot",
  "pgml",
  "rand",
+ "rayon",
  "reqwest",
  "ropey",
  "serde",
  "serde_json",
+ "simsimd",
  "splitter-tree-sitter",
  "text-splitter",
  "tokenizers",
@@ -1957,6 +1971,15 @@ name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
+name = "ordered-float"
+version = "4.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19ff2cf528c6c03d9ed653d6c4ce1dc0582dc4af309790ad92f07c1cd551b0be"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "overload"
@@ -2743,6 +2766,15 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest",
  "rand_core",
+]
+
+[[package]]
+name = "simsimd"
+version = "4.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efc843bc8f12d9c8e6b734a0fe8918fc497b42f6ae0f347dbfdad5b5138ab9b4"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

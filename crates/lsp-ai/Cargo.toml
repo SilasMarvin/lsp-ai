@@ -36,16 +36,23 @@ tree-sitter = "0.22"
 utils-tree-sitter = { path = "../utils-tree-sitter", features = ["all"], version = "0.1.0" }
 splitter-tree-sitter = { path = "../splitter-tree-sitter", version = "0.1.0" }
 text-splitter = { version = "0.13.3" }
+simsimd = { version = "4.4.0", optional = true }
+rayon = { version = "1.1.0", optional = true }
 md5 = "0.7.0"
+fxhash = "0.2.1"
+ordered-float = "4.2.1"
 
 [build-dependencies]
 cc="*"
 
 [features]
-default = []
+default = ["simsimd", "rayon"]
+rayon = ["dep:rayon", "indexmap/rayon"]
+simsimd = ["dep:simsimd"]
 llama_cpp = ["dep:llama-cpp-2"]
 metal = ["llama-cpp-2/metal"]
 cuda = ["llama-cpp-2/cuda"]
+stress_test = []
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
