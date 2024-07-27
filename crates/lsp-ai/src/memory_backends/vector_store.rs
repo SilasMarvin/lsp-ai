@@ -77,6 +77,21 @@ impl StoredChunkUpsert {
     }
 }
 
+fn quantize(embedding: &[f32]) -> Vec<u8> {
+    assert!(embedding.len() % 8 == 0);
+    let bytes: Vec<u8> = embedding.iter().map(|x| x.clamp(0., 1.) as u8).collect();
+    let mut quantised = Vec::with_capacity(embedding.len() / 8);
+    for i in (0..bytes.len()).step_by(8) {
+        let mut byte = 0u8;
+        for j in 0..8 {
+            byte |= bytes[i + j] << j;
+        }
+        quantised.push(byte);
+    }
+
+    quantised
+}
+
 enum StoredChunkVec {
     F32(Vec<f32>),
     Binary(Vec<u8>),
@@ -86,22 +101,7 @@ impl StoredChunkVec {
     fn new(data_type: VectorDataType, vec: Vec<f32>) -> Self {
         match data_type {
             VectorDataType::F32 => StoredChunkVec::F32(vec),
-            VectorDataType::Binary => {
-                StoredChunkVec::Binary({
-                    // Convert our f32 vector to a bitvec
-                    let vec: Vec<u8> = vec.into_iter().map(|x| (x as u8).clamp(0, 1)).collect();
-                    let mut fin_vec = vec![];
-                    for i in 0..vec.len() / 8 {
-                        let mut byte = 0;
-                        // I am not aware of any embeddings that are not multiples of 8
-                        for j in 0..(vec.len() - (i * 8)).min(8) {
-                            byte |= vec[i * 8 + j] << j;
-                        }
-                        fin_vec.push(byte)
-                    }
-                    fin_vec
-                })
-            }
+            VectorDataType::Binary => StoredChunkVec::Binary(quantize(&vec)),
         }
     }
 }
@@ -732,6 +732,13 @@ mod tests {
     };
     use serde_json::json;
 
+    #[test]
+    fn can_quantize() {
+        let v = vec![0.0, 0.5, 1.0, 0.3, 0.8, 0.2, 0.9, 0.1];
+        let quantized = quantize(&v);
+        assert_eq!(quantized, vec![4]);
+    }
+
     fn generate_base_vector_store() -> anyhow::Result<VectorStore> {
         let vector_store_config: config::VectorStore = serde_json::from_value(json!({
             "embedding_model": {
@@ -990,6 +997,7 @@ assert multiply_two_numbers(2, 3) == 6
         Ok(())
     }
 
+    // Switch to the criterion crate for stress tests
     #[test]
     #[cfg(feature = "stress_test")]
     fn stress_test_f32() -> anyhow::Result<()> {
