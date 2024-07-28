@@ -2,9 +2,9 @@ use anyhow::Result;
 
 use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId};
 use lsp_types::{
-    request::{CodeActionRequest, Completion},
-    CompletionOptions, DidChangeTextDocumentParams, DidOpenTextDocumentParams, RenameFilesParams,
-    ServerCapabilities, TextDocumentSyncKind,
+    request::{CodeActionRequest, CodeActionResolveRequest, Completion},
+    CodeActionOptions, CompletionOptions, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+    RenameFilesParams, ServerCapabilities, TextDocumentSyncKind,
 };
 use std::{
     collections::HashMap,
@@ -31,9 +31,7 @@ use config::Config;
 use custom_requests::generation::Generation;
 use memory_backends::MemoryBackend;
 use transformer_backends::TransformerBackend;
-use transformer_worker::{
-    CodeActionRequestRequest, CompletionRequest, GenerationRequest, WorkerRequest,
-};
+use transformer_worker::{CompletionRequest, GenerationRequest, WorkerRequest};
 
 use crate::{
     custom_requests::generation_stream::GenerationStream,
@@ -76,7 +74,12 @@ fn main() -> Result<()> {
         text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Kind(
             TextDocumentSyncKind::INCREMENTAL,
         )),
-        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Simple(true)),
+        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Options(
+            CodeActionOptions {
+                resolve_provider: Some(true),
+                ..Default::default()
+            },
+        )),
         ..Default::default()
     })?;
     let initialization_args = connection.initialize(server_capabilities)?;
@@ -159,9 +162,21 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
                 } else if request_is::<CodeActionRequest>(&req) {
                     match cast::<CodeActionRequest>(req) {
                         Ok((id, params)) => {
-                            let code_action_request = CodeActionRequestRequest::new(id, params);
+                            let code_action_request =
+                                transformer_worker::CodeActionRequest::new(id, params);
                             transformer_tx
                                 .send(WorkerRequest::CodeActionRequest(code_action_request))?;
+                        }
+                        Err(err) => error!("{err:?}"),
+                    }
+                } else if request_is::<CodeActionResolveRequest>(&req) {
+                    match cast::<CodeActionResolveRequest>(req) {
+                        Ok((id, params)) => {
+                            let code_action_request =
+                                transformer_worker::CodeActionResolveRequest::new(id, params);
+                            transformer_tx.send(WorkerRequest::CodeActionResolveRequest(
+                                code_action_request,
+                            ))?;
                         }
                         Err(err) => error!("{err:?}"),
                     }
