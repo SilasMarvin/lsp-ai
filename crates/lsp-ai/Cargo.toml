@@ -44,7 +44,7 @@ ordered-float = "4.2.1"
 futures = "0.3"
 
 [build-dependencies]
-cc="*"
+cc="1"
 
 [features]
 default = ["simsimd", "rayon"]
