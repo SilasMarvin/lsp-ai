@@ -16,4 +16,4 @@ tree-sitter-rust = "0.21"
 tree-sitter-zig = { git = "https://github.com/maxxnino/tree-sitter-zig" }
 
 [build-dependencies]
-cc="*"
+cc="1"
