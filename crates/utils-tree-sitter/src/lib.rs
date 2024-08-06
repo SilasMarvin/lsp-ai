@@ -56,7 +56,7 @@ pub fn get_parser_for_extension(extension: &str) -> Result<Parser, GetParserErro
         "C" => parser.set_language(&tree_sitter_c::language())?,
         #[cfg(any(feature = "all", feature = "cpp"))]
         "C++" => parser.set_language(&tree_sitter_cpp::language())?,
-        #[cfg(any(feature = "all", feature = "c-sharp"))]
+        #[cfg(any(feature = "all", feature = "csharp"))]
         "C#" => parser.set_language(&tree_sitter_c_sharp::language())?,
         #[cfg(any(feature = "all", feature = "css"))]
         "CSS" => parser.set_language(&tree_sitter_css::language())?,
