@@ -361,6 +361,7 @@ struct CodeActionResolveData {
     range: Range,
 }
 
+// TODO: @silas we need to make this compatible with any llm backend
 async fn do_code_action_resolve(
     transformer_backends: Arc<HashMap<String, Box<dyn TransformerBackend + Send + Sync>>>,
     memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
