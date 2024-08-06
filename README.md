@@ -55,6 +55,7 @@ See the wiki for instructions on:
 - [Getting Started](https://github.com/SilasMarvin/lsp-ai/wiki)
 - [Installation](https://github.com/SilasMarvin/lsp-ai/wiki/Installation)
 - [Configuration](https://github.com/SilasMarvin/lsp-ai/wiki/Configuration)
+- [In-Editor Chatting](https://github.com/SilasMarvin/lsp-ai/wiki/In%E2%80%90Editor-Chatting)
 - [Plugins](https://github.com/SilasMarvin/lsp-ai/wiki/Plugins)
 - [Server Capabilities](https://github.com/SilasMarvin/lsp-ai/wiki/Server-Capabilities-and-Functions)
 - [and more](https://github.com/SilasMarvin/lsp-ai/wiki)
