@@ -1,8 +1,8 @@
 <div align="center">
    <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="/logos/logo-white-no-background-1024x1024.png">
-  <source media="(prefers-color-scheme: light)" srcset="/logos/logo-white-black-background-1024x1024.png">
-  <img alt="Logo" src="/logos/logo-white-black-background-1024x1024.png" width="128em">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/647a740a-13c2-4123-b05a-c3131db66c37">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/7903b3c2-a5ac-47e0-ae23-bd6a47b864ee">
+  <img alt="Logo" src="" width="650em">
    </picture>
 </div>
 
