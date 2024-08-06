@@ -1,0 +1,35 @@
+################################
+### Configuration for lsp-ai ###
+################################
+
+[language-server.lsp-ai]
+command = "lsp-ai"
+
+[language-server.lsp-ai.config.memory]
+file_store = { }
+
+[language-server.lsp-ai.config.models.model1]
+type = "anthropic"
+chat_endpoint = "https://api.anthropic.com/v1/messages"
+model = "claude-3-5-sonnet-20240620"
+auth_token_env_var_name = "ANTHROPIC_API_KEY"
+
+[[language-server.lsp-ai.config.chat]]
+trigger = "!C"
+action_display_name = "Chat"
+model = "model1"
+
+[language-server.lsp-ai.config.chat.parameters]
+max_context = 4096
+max_tokens = 1024
+system = "You are a code assistant chatbot. The user will ask you for assistance coding and you will do you best to answer succinctly and accurately"
+
+#################################
+## Configuration for languages ##
+#################################
+
+## Every file type we intend to chat in needs to have lsp-ai enabled 
+
+[[language]]
+name = "markdown"
+language-servers = ["lsp-ai"]
