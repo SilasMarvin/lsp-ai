@@ -376,7 +376,7 @@ pub struct Config {
 
 impl Config {
     pub fn new(mut args: Value) -> Result<Self> {
-        // Validate that the models specfied are there so we can unwrap
+        // Validate that the models specified are there so we can unwrap
         let configuration_args = args
             .as_object_mut()
             .context("Server configuration must be a JSON object")?
