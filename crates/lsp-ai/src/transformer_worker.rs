@@ -410,12 +410,20 @@ async fn do_code_action_resolve(
     )))?;
     let file_text = rx.await?;
 
-    let messages_text = file_text
-        .split(&chat.trigger)
-        .last()
-        .context("trigger not found when resolving chat code action")?;
-    let text_edit_line = messages_text.lines().count();
-    let text_edit_character = messages_text.lines().nth(text_edit_line - 1).unwrap().len();
+    let (messages_text, text_edit_line) = if chat.trigger == "" {
+        (file_text.as_str(), file_text.lines().count() + 1)
+    } else {
+        let mut split = file_text.split(&chat.trigger);
+        let text_edit_line = split
+            .next()
+            .context("trigger not found when resolving chat code action")?
+            .lines()
+            .count();
+        let messages_text = split
+            .next()
+            .context("trigger not found when resolving chat code action")?;
+        (messages_text, text_edit_line + 2)
+    };
 
     // Parse into messages
     // NOTE: We are making some asumptions about the parameters the endpoint takes
@@ -489,12 +497,12 @@ async fn do_code_action_resolve(
 
     // Get the response
     let mut response = transformer_backend.do_completion(&prompt, params).await?;
-    response.insert_text = format!("\n<|assistant|>\n{}\n\n<|user|>\n", response.insert_text);
+    response.insert_text = format!("\n\n<|assistant|>\n{}\n\n<|user|>\n", response.insert_text);
 
     let edit = TextEdit::new(
         Range::new(
-            Position::new(text_edit_line as u32, text_edit_character as u32),
-            Position::new(text_edit_line as u32, text_edit_character as u32),
+            Position::new(text_edit_line as u32, 0),
+            Position::new(text_edit_line as u32, 0),
         ),
         response.insert_text.clone(),
     );
