@@ -1,16 +1,24 @@
-<picture>
+<div align="center">
+   <picture>
   <source media="(prefers-color-scheme: dark)" srcset="/logos/logo-white-no-background-1024x1024.png">
   <source media="(prefers-color-scheme: light)" srcset="/logos/logo-white-black-background-1024x1024.png">
   <img alt="Logo" src="/logos/logo-white-black-background-1024x1024.png" width="128em">
-</picture>
+   </picture>
+</div>
 
-# LSP-AI
+<p align="center">
+   <p align="center"><b>Empowering not replacing programmers.</b></p>
+</p>
 
-[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/vKxfuAxA6Z)
+<p align="center">
+| <a href="https://github.com/SilasMarvin/lsp-ai/wiki"><b>Documentation</b></a> | <a href="https://silasmarvin.dev"><b>Blog</b></a> | <a href="https://discord.gg/vKxfuAxA6Z"><b>Discord</b></a> |
+</p>
 
-LSP-AI is an open source [language server](https://microsoft.github.io/language-server-protocol/) that serves as a backend for performing completion with large language models and soon other AI powered functionality. Because it is a language server, it works with any editor that has LSP support.
+---
 
-**The goal of LSP-AI is to assist and empower software engineers by integrating with the tools they already know and love not replace software engineers.**
+LSP-AI is an open source [language server](https://microsoft.github.io/language-server-protocol/) that serves as a backend for AI-powered functionality in your favorite code editors. It offers features like in-editor chatting with LLMs and code completions. Because it is a language server, it works with any editor that has LSP support.
+
+**The goal of LSP-AI is to assist and empower software engineers by integrating with the tools they already know and love, not replace software engineers.**
 
 A short list of a few of the editors it works with:
 - VS Code
@@ -21,13 +29,15 @@ A short list of a few of the editors it works with:
 
 It works with many many many more editors.
 
-See the wiki for instructions on:
-- [Getting Started](https://github.com/SilasMarvin/lsp-ai/wiki)
-- [Installation](https://github.com/SilasMarvin/lsp-ai/wiki/Installation)
-- [Configuration](https://github.com/SilasMarvin/lsp-ai/wiki/Configuration)
-- [Plugins](https://github.com/SilasMarvin/lsp-ai/wiki/Plugins)
-- [Server Capabilities](https://github.com/SilasMarvin/lsp-ai/wiki/Server-Capabilities-and-Functions)
-- [and more](https://github.com/SilasMarvin/lsp-ai/wiki)
+# Features
+
+## In-Editor Chatting
+
+Chat directly in your codebase with your favorite local or hosted models.
+
+*Chatting with Claude Sonnet in Helix*
+
+## Code Completions
 
 LSP-AI can work as an alternative to Github Copilot.
 
@@ -36,6 +46,16 @@ https://github.com/SilasMarvin/lsp-ai/assets/19626586/59430558-da23-4991-939d-57
 *On the left: VS Code using Mistral Codestral. On the right: Helix using stabilityai/stable-code-3b*
 
 **Note that speed for completions is entirely dependent on the backend being used. For the fastest completions we recommend using either a small local model or Groq.**
+
+# Documentation
+
+See the wiki for instructions on:
+- [Getting Started](https://github.com/SilasMarvin/lsp-ai/wiki)
+- [Installation](https://github.com/SilasMarvin/lsp-ai/wiki/Installation)
+- [Configuration](https://github.com/SilasMarvin/lsp-ai/wiki/Configuration)
+- [Plugins](https://github.com/SilasMarvin/lsp-ai/wiki/Plugins)
+- [Server Capabilities](https://github.com/SilasMarvin/lsp-ai/wiki/Server-Capabilities-and-Functions)
+- [and more](https://github.com/SilasMarvin/lsp-ai/wiki)
 
 # The Case for LSP-AI
 

@@ -423,7 +423,10 @@ async fn do_code_action_resolve(
         let messages_text = split
             .next()
             .context("trigger not found when resolving chat code action")?;
-        (messages_text, text_edit_line + 2)
+        (
+            messages_text,
+            text_edit_line + messages_text.lines().count() + 1,
+        )
     };
 
     // Parse into messages
