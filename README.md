@@ -35,6 +35,8 @@ It works with many many many more editors.
 
 Chat directly in your codebase with your favorite local or hosted models.
 
+![in-editor-chatting](https://github.com/user-attachments/assets/c69a9dc0-c0ac-4786-b24b-f5b5d19ffd3a)
+
 *Chatting with Claude Sonnet in Helix*
 
 ## Code Completions
