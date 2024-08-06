@@ -1,6 +1,6 @@
 <div align="center">
    <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/647a740a-13c2-4123-b05a-c3131db66c37">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/7849b743-a3d5-4fde-8ac7-960205c1b019">
   <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/7903b3c2-a5ac-47e0-ae23-bd6a47b864ee">
   <img alt="Logo" src="" width="650em">
    </picture>
