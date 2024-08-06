@@ -1,8 +1,8 @@
 use anyhow::Context;
 use fxhash::FxBuildHasher;
 use lsp_types::{
-    DidChangeTextDocumentParams, DidOpenTextDocumentParams, RenameFilesParams,
-    TextDocumentPositionParams,
+    DidChangeTextDocumentParams, DidOpenTextDocumentParams, Range, RenameFilesParams,
+    TextDocumentIdentifier, TextDocumentPositionParams,
 };
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
@@ -612,6 +612,25 @@ impl VectorStore {
 
 #[async_trait::async_trait]
 impl MemoryBackend for VectorStore {
+    #[instrument(skip(self))]
+    fn code_action_request(
+        &self,
+        text_document_identifier: &TextDocumentIdentifier,
+        range: &Range,
+        trigger: &str,
+    ) -> anyhow::Result<bool> {
+        self.file_store
+            .code_action_request(text_document_identifier, range, trigger)
+    }
+
+    #[instrument(skip(self))]
+    fn file_request(
+        &self,
+        text_document_identifier: &TextDocumentIdentifier,
+    ) -> anyhow::Result<String> {
+        self.file_store.file_request(text_document_identifier)
+    }
+
     #[instrument(skip(self))]
     fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()> {
         let uri = params.text_document.uri.to_string();

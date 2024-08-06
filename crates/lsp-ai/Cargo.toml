@@ -41,6 +41,7 @@ rayon = { version = "1.1.0", optional = true }
 md5 = "0.7.0"
 fxhash = "0.2.1"
 ordered-float = "4.2.1"
+futures = "0.3"
 
 [build-dependencies]
 cc="*"

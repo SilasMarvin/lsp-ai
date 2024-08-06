@@ -341,11 +341,25 @@ pub(crate) struct Completion {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct Chat {
+    // The trigger text
+    pub(crate) trigger: String,
+    // The name to display in the editor
+    pub(crate) action_display_name: String,
+    // The model key to use
+    pub(crate) model: String,
+    // Args are deserialized by the backend using them
+    #[serde(default)]
+    pub(crate) parameters: Kwargs,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ValidConfig {
     pub(crate) memory: ValidMemoryBackend,
     pub(crate) models: HashMap<String, ValidModel>,
     pub(crate) completion: Option<Completion>,
+    pub(crate) chat: Option<Vec<Chat>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -381,6 +395,10 @@ impl Config {
     ///////////////////////////////////////
     // Helpers for the backends ///////////
     ///////////////////////////////////////
+
+    pub fn get_chat(&self) -> Option<&Vec<Chat>> {
+        self.config.chat.as_ref()
+    }
 
     pub fn is_completions_enabled(&self) -> bool {
         self.config.completion.is_some()
@@ -428,6 +446,7 @@ impl Config {
                 memory: ValidMemoryBackend::FileStore(FileStore { crawl: None }),
                 models: HashMap::new(),
                 completion: None,
+                chat: None,
             },
             client_params: ValidClientParams { root_uri: None },
         }
@@ -439,6 +458,7 @@ impl Config {
                 memory: ValidMemoryBackend::VectorStore(vector_store),
                 models: HashMap::new(),
                 completion: None,
+                chat: None,
             },
             client_params: ValidClientParams { root_uri: None },
         }

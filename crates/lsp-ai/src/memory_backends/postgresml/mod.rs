@@ -1,5 +1,5 @@
 use anyhow::Context;
-use lsp_types::TextDocumentPositionParams;
+use lsp_types::{Range, TextDocumentIdentifier, TextDocumentPositionParams};
 use parking_lot::Mutex;
 use pgml::{Collection, Pipeline};
 use rand::{distributions::Alphanumeric, Rng};
@@ -471,8 +471,27 @@ impl PostgresML {
 #[async_trait::async_trait]
 impl MemoryBackend for PostgresML {
     #[instrument(skip(self))]
+    fn code_action_request(
+        &self,
+        text_document_identifier: &TextDocumentIdentifier,
+        range: &Range,
+        trigger: &str,
+    ) -> anyhow::Result<bool> {
+        self.file_store
+            .code_action_request(text_document_identifier, range, trigger)
+    }
+
+    #[instrument(skip(self))]
     fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String> {
         self.file_store.get_filter_text(position)
+    }
+
+    #[instrument(skip(self))]
+    fn file_request(
+        &self,
+        text_document_identifier: &TextDocumentIdentifier,
+    ) -> anyhow::Result<String> {
+        self.file_store.file_request(text_document_identifier)
     }
 
     #[instrument(skip(self))]

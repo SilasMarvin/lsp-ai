@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use lsp_types::{
-    DidChangeTextDocumentParams, DidOpenTextDocumentParams, RenameFilesParams,
-    TextDocumentPositionParams,
+    DidChangeTextDocumentParams, DidOpenTextDocumentParams, Range, RenameFilesParams,
+    TextDocumentIdentifier, TextDocumentPositionParams,
 };
 use serde_json::Value;
 use tracing::error;
@@ -51,9 +51,53 @@ impl FilterRequest {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct CodeActionRequest {
+    text_document_identifier: TextDocumentIdentifier,
+    range: Range,
+    trigger: String,
+    tx: tokio::sync::oneshot::Sender<bool>,
+}
+
+impl CodeActionRequest {
+    pub(crate) fn new(
+        text_document_identifier: TextDocumentIdentifier,
+        range: Range,
+        trigger: String,
+        tx: tokio::sync::oneshot::Sender<bool>,
+    ) -> Self {
+        Self {
+            text_document_identifier,
+            range,
+            trigger,
+            tx,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct FileRequest {
+    text_document_identifier: TextDocumentIdentifier,
+    tx: tokio::sync::oneshot::Sender<String>,
+}
+
+impl FileRequest {
+    pub(crate) fn new(
+        text_document_identifier: TextDocumentIdentifier,
+        tx: tokio::sync::oneshot::Sender<String>,
+    ) -> Self {
+        Self {
+            text_document_identifier,
+            tx,
+        }
+    }
+}
+
 pub(crate) enum WorkerRequest {
     FilterText(FilterRequest),
+    File(FileRequest),
     Prompt(PromptRequest),
+    CodeActionRequest(CodeActionRequest),
     DidOpenTextDocument(DidOpenTextDocumentParams),
     DidChangeTextDocument(DidChangeTextDocumentParams),
     DidRenameFiles(RenameFilesParams),
@@ -90,6 +134,24 @@ fn do_task(
                     error!("error in memory worker building prompt: {e}")
                 }
             });
+        }
+        WorkerRequest::CodeActionRequest(params) => {
+            let res = memory_backend.code_action_request(
+                &params.text_document_identifier,
+                &params.range,
+                &params.trigger,
+            )?;
+            params
+                .tx
+                .send(res)
+                .map_err(|_| anyhow::anyhow!("sending on channel failed"))?;
+        }
+        WorkerRequest::File(params) => {
+            let res = memory_backend.file_request(&params.text_document_identifier)?;
+            params
+                .tx
+                .send(res)
+                .map_err(|_| anyhow::anyhow!("sending on channel failed"))?;
         }
         WorkerRequest::DidOpenTextDocument(params) => {
             memory_backend.opened_text_document(params)?;

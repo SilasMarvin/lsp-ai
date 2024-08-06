@@ -1,6 +1,6 @@
 use anyhow::Context;
 use indexmap::IndexSet;
-use lsp_types::TextDocumentPositionParams;
+use lsp_types::{Range, TextDocumentIdentifier, TextDocumentPositionParams};
 use parking_lot::{Mutex, RwLock};
 use ropey::Rope;
 use serde_json::Value;
@@ -316,6 +316,38 @@ impl MemoryBackend for FileStore {
             .context("Error getting filter text")?
             .to_string();
         Ok(line)
+    }
+
+    #[instrument(skip(self))]
+    fn code_action_request(
+        &self,
+        text_document_identifier: &TextDocumentIdentifier,
+        _range: &Range,
+        trigger: &str,
+    ) -> anyhow::Result<bool> {
+        Ok(self
+            .file_map
+            .read()
+            .get(text_document_identifier.uri.as_str())
+            .context("Error file not found")?
+            .rope
+            .chunks()
+            .find(|x| x.contains(trigger))
+            .is_some())
+    }
+
+    #[instrument(skip(self))]
+    fn file_request(
+        &self,
+        text_document_identifier: &TextDocumentIdentifier,
+    ) -> anyhow::Result<String> {
+        Ok(self
+            .file_map
+            .read()
+            .get(text_document_identifier.uri.as_str())
+            .context("Error file not found")?
+            .rope
+            .to_string())
     }
 
     #[instrument(skip(self))]

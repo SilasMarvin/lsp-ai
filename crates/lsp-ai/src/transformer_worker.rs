@@ -1,9 +1,11 @@
 use anyhow::Context;
 use lsp_server::{Connection, Message, RequestId, Response};
 use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionList, CompletionParams, CompletionResponse,
-    Position, Range, TextEdit,
+    CodeAction, CodeActionParams, CompletionItem, CompletionItemKind, CompletionList,
+    CompletionParams, CompletionResponse, Position, Range, TextDocumentIdentifier,
+    TextDocumentPositionParams, TextEdit, WorkspaceEdit,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
@@ -15,7 +17,7 @@ use crate::config::{self, Config};
 use crate::custom_requests::generation::{GenerateResult, GenerationParams};
 use crate::custom_requests::generation_stream::GenerationStreamParams;
 use crate::memory_backends::Prompt;
-use crate::memory_worker::{self, FilterRequest, PromptRequest};
+use crate::memory_worker::{self, FileRequest, FilterRequest, PromptRequest};
 use crate::transformer_backends::TransformerBackend;
 use crate::utils::{ToResponseError, TOKIO_RUNTIME};
 
@@ -58,10 +60,36 @@ impl GenerationStreamRequest {
 }
 
 #[derive(Clone, Debug)]
+pub struct CodeActionRequest {
+    id: RequestId,
+    params: CodeActionParams,
+}
+
+impl CodeActionRequest {
+    pub fn new(id: RequestId, params: CodeActionParams) -> Self {
+        Self { id, params }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CodeActionResolveRequest {
+    id: RequestId,
+    params: CodeAction,
+}
+
+impl CodeActionResolveRequest {
+    pub fn new(id: RequestId, params: CodeAction) -> Self {
+        Self { id, params }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum WorkerRequest {
     Completion(CompletionRequest),
     Generation(GenerationRequest),
     GenerationStream(GenerationStreamRequest),
+    CodeActionRequest(CodeActionRequest),
+    CodeActionResolveRequest(CodeActionResolveRequest),
 }
 
 impl WorkerRequest {
@@ -70,6 +98,8 @@ impl WorkerRequest {
             WorkerRequest::Completion(r) => r.id.clone(),
             WorkerRequest::Generation(r) => r.id.clone(),
             WorkerRequest::GenerationStream(r) => r.id.clone(),
+            WorkerRequest::CodeActionRequest(r) => r.id.clone(),
+            WorkerRequest::CodeActionResolveRequest(r) => r.id.clone(),
         }
     }
 }
@@ -186,10 +216,8 @@ fn do_run(
 ) -> anyhow::Result<()> {
     let transformer_backends = Arc::new(transformer_backends);
 
-    // If they have disabled completions, this function will fail. We set it to MIN_POSITIVE to never process a completions request
-    let max_requests_per_second = config
-        .get_completion_transformer_max_requests_per_second()
-        .unwrap_or(f32::MIN_POSITIVE);
+    // If this errors completion is disabled
+    let max_requests_per_second = config.get_completion_transformer_max_requests_per_second();
     let mut last_completion_request_time = SystemTime::now();
     let mut last_completion_request = None;
 
@@ -215,25 +243,46 @@ fn do_run(
         let request = transformer_rx.recv_timeout(Duration::from_millis(5));
 
         match request {
-            Ok(request) => match request {
-                WorkerRequest::Completion(_) => last_completion_request = Some(request),
+            Ok(request) => match &request {
+                WorkerRequest::Completion(completion_request) => {
+                    if max_requests_per_second.is_ok() {
+                        last_completion_request = Some(request);
+                    } else {
+                        // If completion is disabled return an empty response
+                        let completion_list = CompletionList {
+                            is_incomplete: false,
+                            items: vec![],
+                        };
+                        let result = Some(CompletionResponse::List(completion_list));
+                        let result = serde_json::to_value(result).unwrap();
+                        if let Err(e) = connection.sender.send(Message::Response(Response {
+                            id: completion_request.id.clone(),
+                            result: Some(result),
+                            error: None,
+                        })) {
+                            error!("sending empty response for completion request: {e:?}");
+                        }
+                    }
+                }
                 _ => run_dispatch_request(request),
             },
             Err(RecvTimeoutError::Disconnected) => anyhow::bail!("channel disconnected"),
             _ => {}
         }
 
-        if SystemTime::now()
-            .duration_since(last_completion_request_time)?
-            .as_secs_f32()
-            < 1. / max_requests_per_second
-        {
-            continue;
-        }
+        if let Ok(max_requests_per_second) = max_requests_per_second {
+            if SystemTime::now()
+                .duration_since(last_completion_request_time)?
+                .as_secs_f32()
+                < 1. / max_requests_per_second
+            {
+                continue;
+            }
 
-        if let Some(request) = last_completion_request.take() {
-            last_completion_request_time = SystemTime::now();
-            run_dispatch_request(request);
+            if let Some(request) = last_completion_request.take() {
+                last_completion_request_time = SystemTime::now();
+                run_dispatch_request(request);
+            }
         }
     }
 }
@@ -297,7 +346,245 @@ async fn generate_response(
         WorkerRequest::GenerationStream(_) => {
             anyhow::bail!("Streaming is not yet supported")
         }
+        WorkerRequest::CodeActionRequest(request) => {
+            do_code_action_request(memory_backend_tx, &request, &config).await
+        }
+        WorkerRequest::CodeActionResolveRequest(request) => {
+            do_code_action_resolve(transformer_backends, memory_backend_tx, &request, &config).await
+        }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct CodeActionResolveData {
+    text_document: TextDocumentIdentifier,
+    range: Range,
+}
+
+// TODO: @silas we need to make this compatible with any llm backend
+async fn do_code_action_resolve(
+    transformer_backends: Arc<HashMap<String, Box<dyn TransformerBackend + Send + Sync>>>,
+    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
+    request: &CodeActionResolveRequest,
+    config: &Config,
+) -> anyhow::Result<Response> {
+    let chats = match config.get_chat() {
+        Some(chats) => chats,
+        None => {
+            return Ok(Response {
+                id: request.id.clone(),
+                result: None,
+                error: None,
+            });
+        }
+    };
+    let chat = chats
+        .into_iter()
+        .find(|chat| chat.action_display_name == request.params.title)
+        .with_context(|| {
+            format!(
+                "could not resolve action with title: {}",
+                request.params.title
+            )
+        })?;
+
+    let transformer_backend = transformer_backends
+        .get(&chat.model)
+        .with_context(|| format!("model: {} not found when resolving code action", chat.model))?;
+
+    let data: CodeActionResolveData = serde_json::from_value(
+        request
+            .params
+            .data
+            .clone()
+            .context("the `data` field is required to resolve a code action")?,
+    )
+    .context("the `data` field could not be deserialized when resolving the code action")?;
+
+    // Get the file
+    let (tx, rx) = oneshot::channel();
+    memory_backend_tx.send(memory_worker::WorkerRequest::File(FileRequest::new(
+        TextDocumentIdentifier {
+            uri: data.text_document.uri.clone(),
+        },
+        tx,
+    )))?;
+    let file_text = rx.await?;
+
+    let (messages_text, text_edit_line) = if chat.trigger == "" {
+        (file_text.as_str(), file_text.lines().count() + 1)
+    } else {
+        let mut split = file_text.split(&chat.trigger);
+        let text_edit_line = split
+            .next()
+            .context("trigger not found when resolving chat code action")?
+            .lines()
+            .count();
+        let messages_text = split
+            .next()
+            .context("trigger not found when resolving chat code action")?;
+        (
+            messages_text,
+            text_edit_line + messages_text.lines().count() + 1,
+        )
+    };
+
+    // Parse into messages
+    // NOTE: We are making some asumptions about the parameters the endpoint takes
+    // Some APIs like Gemini do not take the messages in this format. We should add
+    // some kind of configuration option for this
+    let mut new_messages = vec![];
+    let mut current_message = String::new();
+    let mut is_user = true;
+    for line in messages_text.lines() {
+        if is_user && line.contains("<|assistant|>") {
+            new_messages.push(serde_json::json!({
+                "role": "user",
+                "content": current_message
+            }));
+            current_message = String::new();
+            is_user = false;
+        } else if !is_user && line.contains("<|user|>") {
+            new_messages.push(serde_json::json!({
+                "role": "assistant",
+                "content": current_message
+            }));
+            current_message = String::new();
+            is_user = true;
+        } else {
+            current_message += line;
+        }
+    }
+    if current_message.len() > 0 {
+        if is_user {
+            new_messages.push(serde_json::json!({
+                "role": "user",
+                "content": current_message
+            }));
+        } else {
+            new_messages.push(serde_json::json!({
+                "role": "assistant",
+                "content": current_message
+            }));
+        }
+    }
+
+    // Add the messages to the params messages
+    // NOTE: Once again we are making some assumptions that the messages key is even the right key to use here
+    let mut params = chat.parameters.clone();
+    if let Some(messages) = params.get_mut("messages") {
+        messages
+            .as_array_mut()
+            .context("`messages` key must be an array")?
+            .append(&mut new_messages);
+    } else {
+        params.insert(
+            "messages".to_string(),
+            serde_json::to_value(&new_messages).unwrap(),
+        );
+    }
+
+    let params = serde_json::to_value(&params).unwrap();
+
+    // Build the prompt
+    let (tx, rx) = oneshot::channel();
+    memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
+        TextDocumentPositionParams {
+            text_document: data.text_document.clone(),
+            position: data.range.start,
+        },
+        transformer_backend.get_prompt_type(&params)?,
+        params.clone(),
+        tx,
+    )))?;
+    let prompt = rx.await?;
+
+    // Get the response
+    let mut response = transformer_backend.do_completion(&prompt, params).await?;
+    response.insert_text = format!("\n\n<|assistant|>\n{}\n\n<|user|>\n", response.insert_text);
+
+    let edit = TextEdit::new(
+        Range::new(
+            Position::new(text_edit_line as u32, 0),
+            Position::new(text_edit_line as u32, 0),
+        ),
+        response.insert_text.clone(),
+    );
+    let changes = HashMap::from([(data.text_document.uri, vec![edit])]);
+
+    Ok(Response {
+        id: request.id.clone(),
+        result: Some(
+            serde_json::to_value(CodeAction {
+                title: chat.action_display_name.clone(),
+                edit: Some(WorkspaceEdit {
+                    changes: Some(changes),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .unwrap(),
+        ),
+        error: None,
+    })
+}
+
+async fn do_code_action_request(
+    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
+    request: &CodeActionRequest,
+    config: &Config,
+) -> anyhow::Result<Response> {
+    let chats = match config.get_chat() {
+        Some(chats) => chats,
+        None => {
+            return Ok(Response {
+                id: request.id.clone(),
+                result: None,
+                error: None,
+            });
+        }
+    };
+
+    let enabled_chats = futures::future::join_all(chats.iter().map(|chat| async {
+        let (tx, rx) = oneshot::channel();
+        memory_backend_tx
+            .clone()
+            .send(memory_worker::WorkerRequest::CodeActionRequest(
+                memory_worker::CodeActionRequest::new(
+                    request.params.text_document.clone(),
+                    request.params.range,
+                    chat.trigger.clone(),
+                    tx,
+                ),
+            ))?;
+        anyhow::Ok(rx.await?)
+    }))
+    .await
+    .into_iter()
+    .collect::<anyhow::Result<Vec<bool>>>()?;
+
+    let code_actions: Vec<CodeAction> = chats
+        .into_iter()
+        .zip(enabled_chats)
+        .filter(|(_, is_enabled)| *is_enabled)
+        .map(|(chat, _)| CodeAction {
+            title: chat.action_display_name.to_owned(),
+            data: Some(
+                serde_json::to_value(CodeActionResolveData {
+                    text_document: request.params.text_document.clone(),
+                    range: request.params.range,
+                })
+                .unwrap(),
+            ),
+            ..Default::default()
+        })
+        .collect();
+
+    Ok(Response {
+        id: request.id.clone(),
+        result: Some(serde_json::to_value(&code_actions).unwrap()),
+        error: None,
+    })
 }
 
 async fn do_completion(

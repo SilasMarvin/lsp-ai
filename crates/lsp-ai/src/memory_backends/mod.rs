@@ -1,6 +1,6 @@
 use lsp_types::{
-    DidChangeTextDocumentParams, DidOpenTextDocumentParams, RenameFilesParams,
-    TextDocumentPositionParams,
+    DidChangeTextDocumentParams, DidOpenTextDocumentParams, Range, RenameFilesParams,
+    TextDocumentIdentifier, TextDocumentPositionParams,
 };
 use serde_json::Value;
 
@@ -115,6 +115,16 @@ pub trait MemoryBackend {
         Ok(())
     }
     fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
+    fn code_action_request(
+        &self,
+        text_document_identifier: &TextDocumentIdentifier,
+        range: &Range,
+        trigger: &str,
+    ) -> anyhow::Result<bool>;
+    fn file_request(
+        &self,
+        text_document_identifier: &TextDocumentIdentifier,
+    ) -> anyhow::Result<String>;
     fn changed_text_document(&self, params: DidChangeTextDocumentParams) -> anyhow::Result<()>;
     fn renamed_files(&self, params: RenameFilesParams) -> anyhow::Result<()>;
     fn get_filter_text(&self, position: &TextDocumentPositionParams) -> anyhow::Result<String>;
