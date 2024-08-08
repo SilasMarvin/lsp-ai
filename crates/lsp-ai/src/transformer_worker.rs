@@ -117,32 +117,42 @@ pub struct DoGenerationStreamResponse {
 }
 
 fn post_process_start(response: String, front: &str) -> String {
-    let mut front_match = response.len();
+    let response_chars: Vec<char> = response.chars().collect();
+    let front_chars: Vec<char> = front.chars().collect();
+
+    let mut front_match = response_chars.len();
     loop {
-        if response.is_empty() || front.ends_with(&response[..front_match]) {
+        if response_chars.is_empty() || front_chars.ends_with(&response_chars[..front_match]) {
             break;
         } else {
-            front_match -= 1;
+            front_match = front_match.saturating_sub(1);
         }
     }
+
     if front_match > 0 {
-        response[front_match..].to_owned()
+        response_chars[front_match..].iter().collect()
     } else {
         response
     }
 }
 
 fn post_process_end(response: String, back: &str) -> String {
+    let response_chars: Vec<char> = response.chars().collect();
+    let back_chars: Vec<char> = back.chars().collect();
+
     let mut back_match = 0;
     loop {
-        if back_match == response.len() || back.starts_with(&response[back_match..]) {
+        if back_match == response_chars.len()
+            || back_chars.starts_with(&response_chars[back_match..])
+        {
             break;
         } else {
             back_match += 1;
         }
     }
+
     if back_match > 0 {
-        response[..back_match].to_owned()
+        response_chars[..back_match].iter().collect()
     } else {
         response
     }
