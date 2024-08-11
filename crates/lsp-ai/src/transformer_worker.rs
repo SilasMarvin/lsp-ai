@@ -421,8 +421,12 @@ async fn do_code_action_resolve(
     )))?;
     let file_text = rx.await?;
 
-    let (messages_text, text_edit_line) = if chat.trigger == "" {
-        (file_text.as_str(), file_text.lines().count() + 1)
+    let (messages_text, text_edit_line, text_edit_char) = if chat.trigger == "" {
+        (
+            file_text.as_str(),
+            file_text.lines().count(),
+            file_text.lines().last().unwrap_or("").chars().count(),
+        )
     } else {
         let mut split = file_text.split(&chat.trigger);
         let text_edit_line = split
@@ -435,7 +439,8 @@ async fn do_code_action_resolve(
             .context("trigger not found when resolving chat code action")?;
         (
             messages_text,
-            text_edit_line + messages_text.lines().count() + 1,
+            text_edit_line + messages_text.lines().count(),
+            messages_text.lines().last().unwrap_or("").chars().count(),
         )
     };
 
@@ -515,8 +520,8 @@ async fn do_code_action_resolve(
 
     let edit = TextEdit::new(
         Range::new(
-            Position::new(text_edit_line as u32, 0),
-            Position::new(text_edit_line as u32, 0),
+            Position::new(text_edit_line as u32, text_edit_char as u32),
+            Position::new(text_edit_line as u32, text_edit_char as u32),
         ),
         response.insert_text.clone(),
     );
