@@ -1,17 +1,21 @@
 use anyhow::Result;
-
+use clap::Parser;
+use directories::BaseDirs;
 use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId};
 use lsp_types::{
     request::{CodeActionRequest, CodeActionResolveRequest, Completion},
     CodeActionOptions, CompletionOptions, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     RenameFilesParams, ServerCapabilities, TextDocumentSyncKind,
 };
+use std::sync::Mutex;
 use std::{
     collections::HashMap,
+    fs,
+    path::Path,
     sync::{mpsc, Arc},
     thread,
 };
-use tracing::error;
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 mod config;
@@ -54,19 +58,58 @@ where
     req.extract(R::METHOD)
 }
 
+// LSP-AI parameters
+#[derive(Parser)]
+#[command(version)]
+struct Args {
+    // Whether to use a custom log file
+    #[arg(long, default_value_t = false)]
+    use_seperate_log_file: bool,
+}
+
+fn create_log_file(base_path: &Path) -> anyhow::Result<fs::File> {
+    let dir_path = base_path.join("lsp-ai");
+    fs::create_dir_all(&dir_path)?;
+    let file_path = dir_path.join("lsp-ai.log");
+    Ok(fs::File::create(file_path)?)
+}
+
 // Builds a tracing subscriber from the `LSP_AI_LOG` environment variable
 // If the variables value is malformed or missing, sets the default log level to ERROR
-fn init_logger() {
-    FmtSubscriber::builder()
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .without_time()
-        .with_env_filter(EnvFilter::from_env("LSP_AI_LOG"))
-        .init();
+fn init_logger(args: &Args) {
+    let builder = FmtSubscriber::builder().with_env_filter(EnvFilter::from_env("LSP_AI_LOG"));
+    let base_dirs = BaseDirs::new();
+
+    if args.use_seperate_log_file && base_dirs.is_some() {
+        let base_dirs = base_dirs.unwrap();
+        let cache_dir = base_dirs.cache_dir();
+        // Linux:   /home/alice/.cache
+        // Windows: C:\Users\Alice\AppData\Local
+        // macOS:   /Users/Alice/Library/Caches
+        match create_log_file(&cache_dir) {
+            Ok(log_file) => builder.with_writer(Mutex::new(log_file)).init(),
+            Err(e) => {
+                eprintln!("creating log file: {e:?} - falling back to stderr");
+                builder
+                    .with_writer(std::io::stderr)
+                    .without_time()
+                    .with_ansi(false)
+                    .init()
+            }
+        }
+    } else {
+        builder
+            .with_writer(std::io::stderr)
+            .without_time()
+            .with_ansi(false)
+            .init()
+    }
 }
 
 fn main() -> Result<()> {
-    init_logger();
+    let args = Args::parse();
+    init_logger(&args);
+    info!("lsp-ai logger initialized starting server");
 
     let (connection, io_threads) = Connection::stdio();
     let server_capabilities = serde_json::to_value(ServerCapabilities {
@@ -181,7 +224,7 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
                         Err(err) => error!("{err:?}"),
                     }
                 } else {
-                    error!("lsp-ai currently only supports textDocument/completion, textDocument/generation and textDocument/generationStream")
+                    error!("Unsupported command - see the wiki for a list of supported commands")
                 }
             }
             Message::Notification(not) => {

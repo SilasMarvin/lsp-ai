@@ -1,7 +1,7 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use super::TransformerBackend;
 use crate::{
@@ -110,6 +110,15 @@ impl Gemini {
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let token = self.get_token()?;
+        let params = json!({
+             "contents": messages,
+             "systemInstruction": params.system_instruction,
+             "generationConfig": params.generation_config,
+        });
+        info!(
+            "Calling Gemini compatible chat API with parameters:\n{}",
+            serde_json::to_string_pretty(&params).unwrap()
+        );
         let res: serde_json::Value = client
             .post(
                 self.configuration
@@ -122,11 +131,7 @@ impl Gemini {
                     + token.as_ref(),
             )
             .header("Content-Type", "application/json")
-            .json(&json!({
-                 "contents": messages,
-                 "systemInstruction": params.system_instruction,
-                 "generationConfig": params.generation_config,
-            }))
+            .json(&params)
             .send()
             .await?
             .json()

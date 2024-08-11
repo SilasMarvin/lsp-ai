@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::{
     config::{self, ChatMessage, FIM},
@@ -116,6 +116,21 @@ impl OpenAI {
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let token = self.get_token()?;
+        let params = json!({
+            "model": self.configuration.model,
+            "max_tokens": params.max_tokens,
+            "n": 1,
+            "top_p": params.top_p,
+            "presence_penalty": params.presence_penalty,
+            "frequency_penalty": params.frequency_penalty,
+            "temperature": params.temperature,
+            "echo": false,
+            "prompt": prompt
+        });
+        info!(
+            "Calling OpenAI compatible completions API with parameters:\n{}",
+            serde_json::to_string_pretty(&params).unwrap()
+        );
         let res: OpenAICompletionsResponse = client
             .post(
                 self.configuration
@@ -126,17 +141,7 @@ impl OpenAI {
             .bearer_auth(token)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .json(&json!({
-                "model": self.configuration.model,
-                "max_tokens": params.max_tokens,
-                "n": 1,
-                "top_p": params.top_p,
-                "presence_penalty": params.presence_penalty,
-                "frequency_penalty": params.frequency_penalty,
-                "temperature": params.temperature,
-                "echo": false,
-                "prompt": prompt
-            }))
+            .json(&params)
             .send().await?
             .json().await?;
         if let Some(error) = res.error {
@@ -158,6 +163,20 @@ impl OpenAI {
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let token = self.get_token()?;
+        let params = json!({
+            "model": self.configuration.model,
+            "max_tokens": params.max_tokens,
+            "n": 1,
+            "top_p": params.top_p,
+            "presence_penalty": params.presence_penalty,
+            "frequency_penalty": params.frequency_penalty,
+            "temperature": params.temperature,
+            "messages": messages
+        });
+        info!(
+            "Calling OpenAI compatible chat API with parameters:\n{}",
+            serde_json::to_string_pretty(&params).unwrap()
+        );
         let res: OpenAIChatResponse = client
             .post(
                 self.configuration
@@ -168,16 +187,7 @@ impl OpenAI {
             .bearer_auth(token)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .json(&json!({
-                "model": self.configuration.model,
-                "max_tokens": params.max_tokens,
-                "n": 1,
-                "top_p": params.top_p,
-                "presence_penalty": params.presence_penalty,
-                "frequency_penalty": params.frequency_penalty,
-                "temperature": params.temperature,
-                "messages": messages
-            }))
+            .json(&params)
             .send()
             .await?
             .json()

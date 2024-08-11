@@ -9,7 +9,7 @@ use llama_cpp_2::{
 };
 use once_cell::sync::Lazy;
 use std::{num::NonZeroU32, path::PathBuf, time::Duration};
-use tracing::{debug, info, instrument};
+use tracing::{info, instrument};
 
 use crate::config::{self, ChatMessage};
 
@@ -29,7 +29,10 @@ impl Model {
         let model_params = LlamaModelParams::default().with_n_gpu_layers(config.n_gpu_layers);
 
         // Load the model
-        debug!("Loading model at path: {:?}", model_path);
+        info!(
+            "Loading llama.cpp compatible model at path: {:?}",
+            model_path
+        );
         let model = LlamaModel::load_from_file(&BACKEND, model_path, &model_params)?;
 
         Ok(Model {
@@ -40,6 +43,8 @@ impl Model {
 
     #[instrument(skip(self))]
     pub fn complete(&self, prompt: &str, params: LLaMACPPRunParams) -> anyhow::Result<String> {
+        info!("Completing with llama.cpp with prompt:\n{prompt}");
+
         // initialize the context
         let ctx_params = LlamaContextParams::default().with_n_ctx(Some(self.n_ctx));
 

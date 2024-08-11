@@ -101,9 +101,7 @@ impl FileStore {
             match parse_tree(uri, &contents, None) {
                 Ok(tree) => Some(tree),
                 Err(e) => {
-                    error!(
-                        "Failed to parse tree for {uri} with error {e}, falling back to no tree"
-                    );
+                    warn!("Failed to parse tree for {uri} with error {e}, falling back to no tree");
                     None
                 }
             }

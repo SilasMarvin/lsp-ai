@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Context;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::{
     config::{self, ChatMessage},
@@ -80,6 +80,18 @@ impl Anthropic {
                 "Please set `auth_token_env_var_name` or `auth_token` to use an Anthropic"
             );
         };
+        let params = json!({
+            "model": self.config.model,
+            "system": system_prompt,
+            "max_tokens": params.max_tokens,
+            "top_p": params.top_p,
+            "temperature": params.temperature,
+            "messages": messages
+        });
+        info!(
+            "Calling Anthropic compatible API with parameters:\n{}",
+            serde_json::to_string_pretty(&params).unwrap()
+        );
         let res: AnthropicChatResponse = client
             .post(
                 self.config
@@ -91,14 +103,7 @@ impl Anthropic {
             .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .json(&json!({
-                "model": self.config.model,
-                "system": system_prompt,
-                "max_tokens": params.max_tokens,
-                "top_p": params.top_p,
-                "temperature": params.temperature,
-                "messages": messages
-            }))
+            .json(&params)
             .send()
             .await?
             .json()
