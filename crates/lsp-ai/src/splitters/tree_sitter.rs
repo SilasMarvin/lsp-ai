@@ -1,5 +1,5 @@
 use splitter_tree_sitter::TreeSitterCodeSplitter;
-use tracing::error;
+use tracing::warn;
 use tree_sitter::Tree;
 
 use crate::{config, memory_backends::file_store::File, utils::parse_tree};
@@ -43,7 +43,7 @@ impl Splitter for TreeSitter {
             match self.split_tree(tree, file.rope().to_string().as_bytes()) {
                 Ok(chunks) => chunks,
                 Err(e) => {
-                    error!(
+                    warn!(
                         "Failed to parse tree for file with error: {e:?}. Falling back to default splitter.",
                     );
                     self.text_splitter.split(file)
@@ -59,14 +59,14 @@ impl Splitter for TreeSitter {
             Ok(tree) => match self.split_tree(&tree, contents.as_bytes()) {
                 Ok(chunks) => chunks,
                 Err(e) => {
-                    error!(
+                    warn!(
                             "Failed to parse tree for file: {uri} with error: {e:?}. Falling back to default splitter.",
                         );
                     self.text_splitter.split_file_contents(uri, contents)
                 }
             },
             Err(e) => {
-                error!(
+                warn!(
                     "Failed to parse tree for file {uri} with error: {e:?}. Falling back to default splitter.",
                 );
                 self.text_splitter.split_file_contents(uri, contents)

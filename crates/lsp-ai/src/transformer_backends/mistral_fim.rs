@@ -1,7 +1,7 @@
 use anyhow::Context;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use super::{open_ai::OpenAIChatResponse, TransformerBackend};
 use crate::{
@@ -67,6 +67,21 @@ impl MistralFIM {
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
         let token = self.get_token()?;
+        let params = json!({
+            "prompt": prompt.prompt,
+            "suffix": prompt.suffix,
+            "model": self.config.model,
+            "max_tokens": params.max_tokens,
+            "top_p": params.top_p,
+            "temperature": params.temperature,
+            "min_tokens": params.min_tokens,
+            "random_seed": params.random_seed,
+            "stop": params.stop
+        });
+        info!(
+            "Calling Mistral compatible FIM API with parameters:\n{}",
+            serde_json::to_string_pretty(&params).unwrap()
+        );
         let res: OpenAIChatResponse = client
             .post(
                 self.config
@@ -77,17 +92,7 @@ impl MistralFIM {
             .bearer_auth(token)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .json(&json!({
-                "prompt": prompt.prompt,
-                "suffix": prompt.suffix,
-                "model": self.config.model,
-                "max_tokens": params.max_tokens,
-                "top_p": params.top_p,
-                "temperature": params.temperature,
-                "min_tokens": params.min_tokens,
-                "random_seed": params.random_seed,
-                "stop": params.stop
-            }))
+            .json(&params)
             .send()
             .await?
             .json()

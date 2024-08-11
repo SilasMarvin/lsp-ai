@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::{
     config::{self, ChatMessage, FIM},
@@ -66,6 +66,18 @@ impl Ollama {
         params: OllamaRunParams,
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
+        let params = json!({
+            "model": self.configuration.model,
+            "prompt": prompt,
+            "options": params.options,
+            "keep_alive": params.keep_alive,
+            "raw": true,
+            "stream": false
+        });
+        info!(
+            "Calling Ollama compatible completion API with parameters:\n{}",
+            serde_json::to_string_pretty(&params).unwrap()
+        );
         let res: OllamaCompletionsResponse = client
             .post(
                 self.configuration
@@ -75,14 +87,7 @@ impl Ollama {
             )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .json(&json!({
-                "model": self.configuration.model,
-                "prompt": prompt,
-                "options": params.options,
-                "keep_alive": params.keep_alive,
-                "raw": true,
-                "stream": false
-            }))
+            .json(&params)
             .send()
             .await?
             .json()
@@ -105,6 +110,19 @@ impl Ollama {
         params: OllamaRunParams,
     ) -> anyhow::Result<String> {
         let client = reqwest::Client::new();
+        let params = json!({
+            "model": self.configuration.model,
+            "system": params.system,
+            "template": params.template,
+            "messages": messages,
+            "options": params.options,
+            "keep_alive": params.keep_alive,
+            "stream": false
+        });
+        info!(
+            "Calling Ollama compatible chat API with parameters:\n{}",
+            serde_json::to_string_pretty(&params).unwrap()
+        );
         let res: OllamaChatResponse = client
             .post(
                 self.configuration
@@ -114,15 +132,7 @@ impl Ollama {
             )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .json(&json!({
-                "model": self.configuration.model,
-                "system": params.system,
-                "template": params.template,
-                "messages": messages,
-                "options": params.options,
-                "keep_alive": params.keep_alive,
-                "stream": false
-            }))
+            .json(&params)
             .send()
             .await?
             .json()
