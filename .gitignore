@@ -6,3 +6,5 @@ dist
 lsp-ai.log
 .vsix
 lsp-ai-chat.md
+.direnv
+result
