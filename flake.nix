@@ -11,7 +11,7 @@
     cargo2nix.inputs.flake-utils.follows = "flake-utils";
   };
 
-  outputs = { cargo2nix, flake-utils, nixpkgs, ... }:
+  outputs = { self, cargo2nix, flake-utils, nixpkgs, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -23,7 +23,6 @@
           rustVersion = "1.75.0";
           packageFun = import ./Cargo.nix;
         };
-
       in
       {
         devShells = rec {
@@ -43,6 +42,47 @@
 
           lsp-ai = (rustPkgs.workspace.lsp-ai { });
         };
-      }
-    );
+
+        nixosModules = rec {
+          default = lsp-ai;
+
+          lsp-ai = { pkgs, lib, config, ... }:
+            with lib;
+            let
+              cfg = config.programs.lsp-ai;
+            in
+            {
+              options.programs.lsp-ai = {
+                enable = mkEnableOption (mdDoc "lsp-ai");
+              };
+
+              config = mkIf cfg.enable {
+                environment.systemPackages = [
+                  self.packages.${pkgs.system}.default
+                ];
+              };
+            };
+        };
+
+        homeManagerModules = rec {
+          default = lsp-ai;
+
+          lsp-ai = { pkgs, lib, config, ... }:
+            with lib;
+            let
+              cfg = config.programs.lsp-ai;
+            in
+            {
+              options.programs.lsp-ai = {
+                enable = mkEnableOption (mdDoc "lsp-ai");
+              };
+
+              config = mkIf cfg.enable {
+                home.packages = [
+                  self.packages.${pkgs.system}.default
+                ];
+              };
+            };
+        };
+      });
 }
