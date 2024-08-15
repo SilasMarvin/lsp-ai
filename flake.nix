@@ -40,15 +40,7 @@
 
         packages = rec {
           default = lsp-ai;
-          # NOTE: if anyone knows of a better way please tell me
-          lsp-ai = (rustPkgs.workspace.lsp-ai { }).overrideAttrs (final: prev: {
-            nativeInputs = (prev.nativeInputs or [ ]) ++ (with pkgs; [
-              pkg-config
-            ]);
-            buildInputs = (prev.buildInputs or [ ]) ++ (with pkgs; [
-              openssl
-            ]);
-          });
+          lsp-ai = (rustPkgs.workspace.lsp-ai { });
         };
       })) // {
       nixosModules = rec {
