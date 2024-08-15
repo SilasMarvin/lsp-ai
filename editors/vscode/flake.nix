@@ -11,15 +11,19 @@
     node2nix.inputs.flake-utils.follows = "flake-utils";
   };
 
-  outputs = { self, node2nix, flake-utils, nixpkgs, ... }:
+  outputs = { self, flake-utils, nixpkgs, ... } @inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [ node2nix.overlays."${system}" ];
         };
 
-        node-env = import ./default.nix {
+        node2nix-env = import inputs.node2nix {
+          inherit pkgs system;
+          nodejs = pkgs.nodejs;
+        };
+
+        lsp-ai-env = import ./default.nix {
           inherit pkgs system;
           nodejs = pkgs.nodejs;
         };
@@ -27,12 +31,20 @@
       {
         devShells = rec {
           default = dev;
-          dev = node-env.shell;
+          dev = lsp-ai-env.shell.override {
+            buildInputs = with pkgs; [
+              # nix
+              nil
+              nixpkgs-fmt
+
+              node2nix-env.package
+            ];
+          };
         };
 
         packages = rec {
           default = lsp-ai;
-          lsp-ai = node-env.package;
+          lsp-ai = lsp-ai-env.package;
         };
       });
 }

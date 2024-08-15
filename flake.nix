@@ -11,12 +11,12 @@
     cargo2nix.inputs.flake-utils.follows = "flake-utils";
   };
 
-  outputs = { self, cargo2nix, flake-utils, nixpkgs, ... }:
+  outputs = { self, flake-utils, nixpkgs, ... } @inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [ cargo2nix.overlays.default ];
+          overlays = [ inputs.cargo2nix.overlays.default ];
         };
 
         rustPkgs = pkgs.rustBuilder.makePackageSet {
@@ -33,6 +33,8 @@
               # nix
               nil
               nixpkgs-fmt
+
+              inputs.cargo2nix.packages."${system}".default
             ];
           };
         };
