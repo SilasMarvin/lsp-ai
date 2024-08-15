@@ -1,8 +1,5 @@
-let
-  cargo_toml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
-in
 {
-  description = cargo_toml.description;
+  description = "LSP-AI - An open-source language server that serves as a backend for AI-powered functionality, designed to assist and empower software engineers, not replace them.";
 
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
@@ -14,7 +11,7 @@ in
     cargo2nix.inputs.flake-utils.follows = "flake-utils";
   };
 
-  outputs = { self, cargo2nix, flake-utils, nixpkgs, ... }:
+  outputs = { cargo2nix, flake-utils, nixpkgs, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -37,8 +34,6 @@ in
               # nix
               nil
               nixpkgs-fmt
-
-              # rust
             ];
           };
         };
