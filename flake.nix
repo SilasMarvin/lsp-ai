@@ -12,7 +12,7 @@
   };
 
   outputs = { self, flake-utils, nixpkgs, ... } @inputs:
-    flake-utils.lib.eachDefaultSystem (system:
+    (flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -27,7 +27,6 @@
       {
         devShells = rec {
           default = dev;
-
           dev = rustPkgs.workspaceShell {
             packages = with pkgs; [
               # nix
@@ -41,50 +40,57 @@
 
         packages = rec {
           default = lsp-ai;
-
-          lsp-ai = (rustPkgs.workspace.lsp-ai { });
+          # NOTE: if anyone knows of a better way please tell me
+          lsp-ai = (rustPkgs.workspace.lsp-ai { }).overrideAttrs (final: prev: {
+            nativeInputs = (prev.nativeInputs or [ ]) ++ (with pkgs; [
+              pkg-config
+            ]);
+            buildInputs = (prev.buildInputs or [ ]) ++ (with pkgs; [
+              openssl
+            ]);
+          });
         };
+      })) // {
+      nixosModules = rec {
+        default = lsp-ai;
 
-        nixosModules = rec {
-          default = lsp-ai;
-
-          lsp-ai = { pkgs, lib, config, ... }:
-            with lib;
-            let
-              cfg = config.programs.lsp-ai;
-            in
-            {
-              options.programs.lsp-ai = {
-                enable = mkEnableOption (mdDoc "lsp-ai");
-              };
-
-              config = mkIf cfg.enable {
-                environment.systemPackages = [
-                  self.packages.${pkgs.system}.default
-                ];
-              };
+        lsp-ai = { pkgs, lib, config, ... }:
+          with lib;
+          let
+            cfg = config.programs.lsp-ai;
+          in
+          {
+            options.programs.lsp-ai = {
+              enable = mkEnableOption (mdDoc "lsp-ai");
             };
-        };
 
-        homeManagerModules = rec {
-          default = lsp-ai;
-
-          lsp-ai = { pkgs, lib, config, ... }:
-            with lib;
-            let
-              cfg = config.programs.lsp-ai;
-            in
-            {
-              options.programs.lsp-ai = {
-                enable = mkEnableOption (mdDoc "lsp-ai");
-              };
-
-              config = mkIf cfg.enable {
-                home.packages = [
-                  self.packages.${pkgs.system}.default
-                ];
-              };
+            config = mkIf cfg.enable {
+              environment.systemPackages = [
+                self.packages.${pkgs.system}.default
+              ];
             };
-        };
-      });
+          };
+      };
+
+      homeManagerModules = rec {
+        default = lsp-ai;
+
+        lsp-ai = { pkgs, lib, config, ... }:
+          with lib;
+          let
+            cfg = config.programs.lsp-ai;
+          in
+          {
+            options.programs.lsp-ai = {
+              enable = mkEnableOption (mdDoc "lsp-ai");
+            };
+
+            config = mkIf cfg.enable {
+              home.packages = [
+                self.packages.${pkgs.system}.default
+              ];
+            };
+          };
+      };
+    };
 }
