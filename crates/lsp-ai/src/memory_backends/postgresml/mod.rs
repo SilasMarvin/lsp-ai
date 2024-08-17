@@ -589,19 +589,20 @@ impl MemoryBackend for PostgresML {
         // Reconstruct the Prompts
         Ok(match code {
             Prompt::ContextAndCode(context_and_code) => {
-                Prompt::ContextAndCode(ContextAndCodePrompt::new(
-                    context.to_owned(),
-                    format_file_chunk(
+                Prompt::ContextAndCode(ContextAndCodePrompt {
+                    context: context.to_owned(),
+                    code: format_file_chunk(
                         position.text_document.uri.as_ref(),
                         &context_and_code.code,
                         self.config.client_params.root_uri.as_deref(),
                     ),
-                ))
+                    selected_text: None,
+                })
             }
-            Prompt::FIM(fim) => Prompt::FIM(FIMPrompt::new(
-                format!("{context}\n\n{}", fim.prompt),
-                fim.suffix,
-            )),
+            Prompt::FIM(fim) => Prompt::FIM(FIMPrompt {
+                prompt: format!("{context}\n\n{}", fim.prompt),
+                suffix: fim.suffix,
+            }),
         })
     }
 

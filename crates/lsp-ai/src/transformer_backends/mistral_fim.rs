@@ -97,15 +97,24 @@ impl MistralFIM {
             .await?
             .json()
             .await?;
-        if let Some(error) = res.error {
-            anyhow::bail!("{:?}", error.to_string())
-        } else if let Some(choices) = res.choices {
-            Ok(choices[0].message.content.clone())
-        } else {
-            anyhow::bail!(
-                "Unknown error while making request to MistralFIM: {:?}",
-                res.other
-            );
+
+        info!(
+            "Response from Mistral compatible FIM API:\n{}",
+            serde_json::to_string_pretty(&res).unwrap()
+        );
+        match res {
+            OpenAIChatResponse::Success(mut resp) => {
+                Ok(std::mem::take(&mut resp.choices[0].message.content))
+            }
+            OpenAIChatResponse::Error(error) => {
+                anyhow::bail!("making Mistral FIM request: {:?}", error.error.to_string())
+            }
+            OpenAIChatResponse::Other(other) => {
+                anyhow::bail!(
+                    "unknown error while making Mistral FIM request: {:?}",
+                    other
+                )
+            }
         }
     }
 }

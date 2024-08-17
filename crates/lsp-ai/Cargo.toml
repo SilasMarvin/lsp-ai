@@ -43,6 +43,7 @@ fxhash = "0.2.1"
 ordered-float = "4.2.1"
 futures = "0.3"
 clap = { version = "4.5.14", features = ["derive"] }
+regex = "1.10.6"
 
 [build-dependencies]
 cc="1"

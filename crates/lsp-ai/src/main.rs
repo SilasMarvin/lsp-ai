@@ -3,7 +3,7 @@ use clap::Parser;
 use directories::BaseDirs;
 use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId};
 use lsp_types::{
-    request::{CodeActionRequest, CodeActionResolveRequest, Completion},
+    request::{CodeActionRequest, CodeActionResolveRequest, Completion, Shutdown},
     CodeActionOptions, CompletionOptions, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     RenameFilesParams, ServerCapabilities, TextDocumentSyncKind,
 };
@@ -127,7 +127,10 @@ fn main() -> Result<()> {
     })?;
     let initialization_args = connection.initialize(server_capabilities)?;
 
-    main_loop(connection, initialization_args)?;
+    if let Err(e) = main_loop(connection, initialization_args) {
+        error!("{e:?}");
+    }
+
     io_threads.join()?;
     Ok(())
 }
@@ -147,7 +150,7 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
 
     // Setup the transformer worker
     let memory_backend: Box<dyn MemoryBackend + Send + Sync> = config.clone().try_into()?;
-    thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
+    let memory_worker_thread = thread::spawn(move || memory_worker::run(memory_backend, memory_rx));
 
     // Setup our transformer worker
     let transformer_backends: HashMap<String, Box<dyn TransformerBackend + Send + Sync>> = config
@@ -160,7 +163,7 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     let thread_connection = connection.clone();
     let thread_memory_tx = memory_tx.clone();
     let thread_config = config.clone();
-    thread::spawn(move || {
+    let transformer_worker_thread = thread::spawn(move || {
         transformer_worker::run(
             transformer_backends,
             thread_memory_tx,
@@ -173,10 +176,18 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
     for msg in &connection.receiver {
         match msg {
             Message::Request(req) => {
-                if connection.handle_shutdown(&req)? {
+                if request_is::<Shutdown>(&req) {
+                    memory_tx.send(memory_worker::WorkerRequest::Shutdown)?;
+                    if let Err(e) = memory_worker_thread.join() {
+                        std::panic::resume_unwind(e)
+                    }
+                    transformer_tx.send(WorkerRequest::Shutdown)?;
+                    if let Err(e) = transformer_worker_thread.join() {
+                        std::panic::resume_unwind(e)
+                    }
+                    connection.handle_shutdown(&req)?;
                     return Ok(());
-                }
-                if request_is::<Completion>(&req) {
+                } else if request_is::<Completion>(&req) {
                     match cast::<Completion>(req) {
                         Ok((id, params)) => {
                             let completion_request = CompletionRequest::new(id, params);
@@ -224,7 +235,7 @@ fn main_loop(connection: Connection, args: serde_json::Value) -> Result<()> {
                         Err(err) => error!("{err:?}"),
                     }
                 } else {
-                    error!("Unsupported command - see the wiki for a list of supported commands")
+                    error!("Unsupported command - see the wiki for a list of supported commands: {req:?}")
                 }
             }
             Message::Notification(not) => {

@@ -36,27 +36,13 @@ impl From<&Value> for MemoryRunParams {
 pub struct ContextAndCodePrompt {
     pub context: String,
     pub code: String,
-}
-
-impl ContextAndCodePrompt {
-    pub fn new(context: String, code: String) -> Self {
-        Self { context, code }
-    }
+    pub selected_text: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct FIMPrompt {
     pub prompt: String,
     pub suffix: String,
-}
-
-impl FIMPrompt {
-    pub fn new(prefix: String, suffix: String) -> Self {
-        Self {
-            prompt: prefix,
-            suffix,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -159,23 +145,25 @@ impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
 #[cfg(test)]
 impl Prompt {
     pub fn default_with_cursor() -> Self {
-        Self::ContextAndCode(ContextAndCodePrompt::new(
-            r#"def test_context():\n    pass"#.to_string(),
-            r#"def test_code():\n    <CURSOR>"#.to_string(),
-        ))
+        Self::ContextAndCode(ContextAndCodePrompt {
+            context: r#"def test_context():\n    pass"#.to_string(),
+            code: r#"def test_code():\n    <CURSOR>"#.to_string(),
+            selected_text: None,
+        })
     }
 
     pub fn default_fim() -> Self {
-        Self::FIM(FIMPrompt::new(
-            r#"def test_context():\n    pass"#.to_string(),
-            r#"def test_code():\n    "#.to_string(),
-        ))
+        Self::FIM(FIMPrompt {
+            prompt: r#"def test_context():\n    pass"#.to_string(),
+            suffix: r#"def test_code():\n    "#.to_string(),
+        })
     }
 
     pub fn default_without_cursor() -> Self {
-        Self::ContextAndCode(ContextAndCodePrompt::new(
-            r#"def test_context():\n    pass"#.to_string(),
-            r#"def test_code():\n    "#.to_string(),
-        ))
+        Self::ContextAndCode(ContextAndCodePrompt {
+            context: r#"def test_context():\n    pass"#.to_string(),
+            code: r#"def test_code():\n    "#.to_string(),
+            selected_text: None,
+        })
     }
 }
