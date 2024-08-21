@@ -65,6 +65,9 @@ struct Args {
     // Whether to use a custom log file
     #[arg(long, default_value_t = false)]
     use_seperate_log_file: bool,
+    // A dummy argument for now
+    #[arg(long, default_value_t = true)]
+    stdio: bool,
 }
 
 fn create_log_file(base_path: &Path) -> anyhow::Result<fs::File> {
