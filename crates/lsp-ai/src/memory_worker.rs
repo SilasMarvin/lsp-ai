@@ -94,6 +94,7 @@ impl FileRequest {
 }
 
 pub(crate) enum WorkerRequest {
+    Shutdown,
     FilterText(FilterRequest),
     File(FileRequest),
     Prompt(PromptRequest),
@@ -160,6 +161,7 @@ fn do_task(
             memory_backend.changed_text_document(params)?;
         }
         WorkerRequest::DidRenameFiles(params) => memory_backend.renamed_files(params)?,
+        WorkerRequest::Shutdown => unreachable!(),
     }
     anyhow::Ok(())
 }
@@ -171,8 +173,15 @@ fn do_run(
     let memory_backend = Arc::new(memory_backend);
     loop {
         let request = rx.recv()?;
-        if let Err(e) = do_task(request, memory_backend.clone()) {
-            error!("error in memory worker task: {e}")
+        match &request {
+            WorkerRequest::Shutdown => {
+                return Ok(());
+            }
+            _ => {
+                if let Err(e) = do_task(request, memory_backend.clone()) {
+                    error!("error in memory worker task: {e}")
+                }
+            }
         }
     }
 }

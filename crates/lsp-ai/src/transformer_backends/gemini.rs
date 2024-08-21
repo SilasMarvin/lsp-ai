@@ -10,7 +10,7 @@ use crate::{
     transformer_worker::{
         DoGenerationResponse, DoGenerationStreamResponse, GenerationStreamRequest,
     },
-    utils::format_context_code_in_str,
+    utils::format_prompt_in_str,
 };
 
 fn format_gemini_contents(
@@ -25,7 +25,7 @@ fn format_gemini_contents(
                 m.parts
                     .iter()
                     .map(|p| Part {
-                        text: format_context_code_in_str(&p.text, &prompt.context, &prompt.code),
+                        text: format_prompt_in_str(&p.text, &prompt),
                     })
                     .collect(),
             )

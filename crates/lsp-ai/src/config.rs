@@ -9,15 +9,23 @@ const fn max_requests_per_second_default() -> f32 {
     1.
 }
 
+const fn true_default() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PostProcess {
+    pub extractor: Option<String>,
+    #[serde(default = "true_default")]
     pub remove_duplicate_start: bool,
+    #[serde(default = "true_default")]
     pub remove_duplicate_end: bool,
 }
 
 impl Default for PostProcess {
     fn default() -> Self {
         Self {
+            extractor: None,
             remove_duplicate_start: true,
             remove_duplicate_end: true,
         }
@@ -354,12 +362,30 @@ pub struct Chat {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct Action {
+    // The name to display in the editor
+    pub(crate) action_display_name: String,
+    // The model key to use
+    pub(crate) model: String,
+    // Args are deserialized by the backend using them
+    #[serde(default)]
+    pub(crate) parameters: Kwargs,
+    // Parameters for post processing
+    #[serde(default)]
+    pub(crate) post_process: PostProcess,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ValidConfig {
     pub(crate) memory: ValidMemoryBackend,
     pub(crate) models: HashMap<String, ValidModel>,
     pub(crate) completion: Option<Completion>,
-    pub(crate) chat: Option<Vec<Chat>>,
+    #[serde(default)]
+    pub(crate) actions: Vec<Action>,
+    #[serde(default)]
+    #[serde(alias = "chat")] // Legacy from when it was called chat, remove soon
+    pub(crate) chats: Vec<Chat>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -396,8 +422,12 @@ impl Config {
     // Helpers for the backends ///////////
     ///////////////////////////////////////
 
-    pub fn get_chat(&self) -> Option<&Vec<Chat>> {
-        self.config.chat.as_ref()
+    pub fn get_chats(&self) -> &Vec<Chat> {
+        &self.config.chats
+    }
+
+    pub fn get_actions(&self) -> &Vec<Action> {
+        &self.config.actions
     }
 
     pub fn is_completions_enabled(&self) -> bool {
@@ -446,7 +476,8 @@ impl Config {
                 memory: ValidMemoryBackend::FileStore(FileStore { crawl: None }),
                 models: HashMap::new(),
                 completion: None,
-                chat: None,
+                actions: vec![],
+                chats: vec![],
             },
             client_params: ValidClientParams { root_uri: None },
         }
@@ -458,7 +489,8 @@ impl Config {
                 memory: ValidMemoryBackend::VectorStore(vector_store),
                 models: HashMap::new(),
                 completion: None,
-                chat: None,
+                actions: vec![],
+                chats: vec![],
             },
             client_params: ValidClientParams { root_uri: None },
         }

@@ -5,13 +5,17 @@ use lsp_types::{
     CompletionParams, CompletionResponse, Position, Range, TextDocumentIdentifier,
     TextDocumentPositionParams, TextEdit, WorkspaceEdit,
 };
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::mpsc::RecvTimeoutError;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::{
+    collections::HashMap,
+    sync::{mpsc::RecvTimeoutError, Arc},
+    time::{Duration, SystemTime},
+};
 use tokio::sync::oneshot;
-use tracing::{error, instrument};
+use tracing::{error, info, instrument};
 
 use crate::config::{self, Config};
 use crate::custom_requests::generation::{GenerateResult, GenerationParams};
@@ -20,6 +24,8 @@ use crate::memory_backends::Prompt;
 use crate::memory_worker::{self, FileRequest, FilterRequest, PromptRequest};
 use crate::transformer_backends::TransformerBackend;
 use crate::utils::{ToResponseError, TOKIO_RUNTIME};
+
+static RE: Lazy<Mutex<HashMap<String, Regex>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Clone, Debug)]
 pub(crate) struct CompletionRequest {
@@ -85,6 +91,7 @@ impl CodeActionResolveRequest {
 
 #[derive(Clone, Debug)]
 pub(crate) enum WorkerRequest {
+    Shutdown,
     Completion(CompletionRequest),
     Generation(GenerationRequest),
     GenerationStream(GenerationStreamRequest),
@@ -95,6 +102,7 @@ pub(crate) enum WorkerRequest {
 impl WorkerRequest {
     fn get_id(&self) -> RequestId {
         match self {
+            WorkerRequest::Shutdown => unreachable!(),
             WorkerRequest::Completion(r) => r.id.clone(),
             WorkerRequest::Generation(r) => r.id.clone(),
             WorkerRequest::GenerationStream(r) => r.id.clone(),
@@ -166,6 +174,27 @@ fn post_process_response(
 ) -> String {
     match prompt {
         Prompt::ContextAndCode(context_and_code) => {
+            // First we need to extract
+            let response = if let Some(extractor) = &config.extractor {
+                let mut re_map = RE.lock();
+                let re = match re_map.get(extractor) {
+                    Some(re) => re,
+                    None => {
+                        let re = Regex::new(extractor).unwrap();
+                        re_map.insert(extractor.to_owned(), re);
+                        re_map.get(extractor).unwrap()
+                    }
+                };
+                let response = re
+                    .captures(&response)
+                    .and_then(|cap| cap.get(1))
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
+                info!("response text after extracting:\n{}", response);
+                response
+            } else {
+                response
+            };
             if context_and_code.code.contains("<CURSOR>") {
                 let mut split = context_and_code.code.split("<CURSOR>");
                 let response = if config.remove_duplicate_start {
@@ -254,6 +283,9 @@ fn do_run(
 
         match request {
             Ok(request) => match &request {
+                WorkerRequest::Shutdown => {
+                    return Ok(());
+                }
                 WorkerRequest::Completion(completion_request) => {
                     if max_requests_per_second.is_ok() {
                         last_completion_request = Some(request);
@@ -362,6 +394,7 @@ async fn generate_response(
         WorkerRequest::CodeActionResolveRequest(request) => {
             do_code_action_resolve(transformer_backends, memory_backend_tx, &request, &config).await
         }
+        WorkerRequest::Shutdown => unreachable!(),
     }
 }
 
@@ -371,36 +404,18 @@ struct CodeActionResolveData {
     range: Range,
 }
 
-// TODO: @silas we need to make this compatible with any llm backend
-async fn do_code_action_resolve(
+async fn do_chat_code_action_resolve(
+    action: &config::Chat,
     transformer_backends: Arc<HashMap<String, Box<dyn TransformerBackend + Send + Sync>>>,
     memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
     request: &CodeActionResolveRequest,
-    config: &Config,
-) -> anyhow::Result<Response> {
-    let chats = match config.get_chat() {
-        Some(chats) => chats,
-        None => {
-            return Ok(Response {
-                id: request.id.clone(),
-                result: None,
-                error: None,
-            });
-        }
-    };
-    let chat = chats
-        .into_iter()
-        .find(|chat| chat.action_display_name == request.params.title)
-        .with_context(|| {
-            format!(
-                "could not resolve action with title: {}",
-                request.params.title
-            )
-        })?;
-
-    let transformer_backend = transformer_backends
-        .get(&chat.model)
-        .with_context(|| format!("model: {} not found when resolving code action", chat.model))?;
+) -> anyhow::Result<CodeAction> {
+    let transformer_backend = transformer_backends.get(&action.model).with_context(|| {
+        format!(
+            "model: {} not found when resolving code action",
+            action.model
+        )
+    })?;
 
     let data: CodeActionResolveData = serde_json::from_value(
         request
@@ -421,14 +436,14 @@ async fn do_code_action_resolve(
     )))?;
     let file_text = rx.await?;
 
-    let (messages_text, text_edit_line, text_edit_char) = if chat.trigger == "" {
+    let (messages_text, text_edit_line, text_edit_char) = if action.trigger == "" {
         (
             file_text.as_str(),
             file_text.lines().count(),
             file_text.lines().last().unwrap_or("").chars().count(),
         )
     } else {
-        let mut split = file_text.split(&chat.trigger);
+        let mut split = file_text.splitn(2, &action.trigger);
         let text_edit_line = split
             .next()
             .context("trigger not found when resolving chat code action")?
@@ -486,7 +501,7 @@ async fn do_code_action_resolve(
 
     // Add the messages to the params messages
     // NOTE: Once again we are making some assumptions that the messages key is even the right key to use here
-    let mut params = chat.parameters.clone();
+    let mut params = action.parameters.clone();
     if let Some(messages) = params.get_mut("messages") {
         messages
             .as_array_mut()
@@ -527,19 +542,161 @@ async fn do_code_action_resolve(
     );
     let changes = HashMap::from([(data.text_document.uri, vec![edit])]);
 
+    Ok(CodeAction {
+        title: action.action_display_name.clone(),
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+}
+
+async fn do_code_action_action_resolve(
+    action: &config::Action,
+    transformer_backends: Arc<HashMap<String, Box<dyn TransformerBackend + Send + Sync>>>,
+    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
+    request: &CodeActionResolveRequest,
+) -> anyhow::Result<CodeAction> {
+    let transformer_backend = transformer_backends.get(&action.model).with_context(|| {
+        format!(
+            "model: {} not found when resolving code action",
+            action.model
+        )
+    })?;
+
+    let data: CodeActionResolveData = serde_json::from_value(
+        request
+            .params
+            .data
+            .clone()
+            .context("the `data` field is required to resolve a code action")?,
+    )
+    .context("the `data` field could not be deserialized when resolving the code action")?;
+
+    let params = serde_json::to_value(action.parameters.clone()).unwrap();
+
+    // Get the prompt
+    let text_document_position = TextDocumentPositionParams {
+        text_document: data.text_document.clone(),
+        position: data.range.start,
+    };
+    let (tx, rx) = oneshot::channel();
+    memory_backend_tx.send(memory_worker::WorkerRequest::Prompt(PromptRequest::new(
+        text_document_position,
+        transformer_backend.get_prompt_type(&params)?,
+        params.clone(),
+        tx,
+    )))?;
+    let mut prompt = rx.await?;
+
+    // If they have some text highlighted and we aren't doing FIM  let's get it
+    if matches!(prompt, Prompt::ContextAndCode(_)) && data.range.start != data.range.end {
+        // Get the file
+        let (tx, rx) = oneshot::channel();
+        memory_backend_tx.send(memory_worker::WorkerRequest::File(FileRequest::new(
+            TextDocumentIdentifier {
+                uri: data.text_document.uri.clone(),
+            },
+            tx,
+        )))?;
+        let file_text = rx.await?;
+
+        // Get the text
+        let lines: Vec<&str> = file_text.lines().collect();
+        let mut result = String::new();
+        for (i, line) in lines
+            .iter()
+            .enumerate()
+            .skip(data.range.start.line as usize)
+            .take((data.range.end.line - data.range.start.line + 1) as usize)
+        {
+            let start_char = if i == data.range.start.line as usize {
+                data.range.start.character as usize
+            } else {
+                0
+            };
+            let end_char = if i == data.range.end.line as usize {
+                data.range.end.character as usize + 1
+            } else {
+                line.len()
+            };
+
+            if start_char < line.len() {
+                result.push_str(&line[start_char..end_char.min(line.len())]);
+            }
+
+            if i != data.range.end.line as usize {
+                result.push('\n');
+            }
+        }
+
+        // Update our prompt to include the selected text
+        if let Prompt::ContextAndCode(prompt) = &mut prompt {
+            prompt.selected_text = Some(result)
+        }
+    }
+
+    // Get the response
+    let mut response = transformer_backend.do_completion(&prompt, params).await?;
+    response.insert_text =
+        post_process_response(response.insert_text, &prompt, &action.post_process);
+
+    let edit = TextEdit::new(
+        Range::new(
+            Position::new(data.range.start.line, data.range.start.character),
+            Position::new(data.range.end.line, data.range.end.character),
+        ),
+        response.insert_text.clone(),
+    );
+    let changes = HashMap::from([(data.text_document.uri, vec![edit])]);
+
+    Ok(CodeAction {
+        title: action.action_display_name.clone(),
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+}
+
+// TODO: @silas we need to make this compatible with any llm backend
+async fn do_code_action_resolve(
+    transformer_backends: Arc<HashMap<String, Box<dyn TransformerBackend + Send + Sync>>>,
+    memory_backend_tx: std::sync::mpsc::Sender<memory_worker::WorkerRequest>,
+    request: &CodeActionResolveRequest,
+    config: &Config,
+) -> anyhow::Result<Response> {
+    let action = if let Some(chat_action) = config
+        .get_chats()
+        .iter()
+        .find(|chat_action| chat_action.action_display_name == request.params.title)
+    {
+        do_chat_code_action_resolve(
+            chat_action,
+            transformer_backends,
+            memory_backend_tx,
+            request,
+        )
+        .await?
+    } else {
+        let action = config
+            .get_actions()
+            .iter()
+            .find(|action| action.action_display_name == request.params.title)
+            .with_context(|| {
+                format!(
+                    "action: {} does not exist in `chats` or `actions`",
+                    request.params.title
+                )
+            })?;
+        do_code_action_action_resolve(action, transformer_backends, memory_backend_tx, request)
+            .await?
+    };
     Ok(Response {
         id: request.id.clone(),
-        result: Some(
-            serde_json::to_value(CodeAction {
-                title: chat.action_display_name.clone(),
-                edit: Some(WorkspaceEdit {
-                    changes: Some(changes),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .unwrap(),
-        ),
+        result: Some(serde_json::to_value(action).unwrap()),
         error: None,
     })
 }
@@ -549,16 +706,8 @@ async fn do_code_action_request(
     request: &CodeActionRequest,
     config: &Config,
 ) -> anyhow::Result<Response> {
-    let chats = match config.get_chat() {
-        Some(chats) => chats,
-        None => {
-            return Ok(Response {
-                id: request.id.clone(),
-                result: None,
-                error: None,
-            });
-        }
-    };
+    let actions = config.get_actions();
+    let chats = config.get_chats();
 
     let enabled_chats = futures::future::join_all(chats.iter().map(|chat| async {
         let (tx, rx) = oneshot::channel();
@@ -578,7 +727,7 @@ async fn do_code_action_request(
     .into_iter()
     .collect::<anyhow::Result<Vec<bool>>>()?;
 
-    let code_actions: Vec<CodeAction> = chats
+    let mut code_actions: Vec<CodeAction> = chats
         .into_iter()
         .zip(enabled_chats)
         .filter(|(_, is_enabled)| *is_enabled)
@@ -594,6 +743,20 @@ async fn do_code_action_request(
             ..Default::default()
         })
         .collect();
+
+    code_actions.extend(actions.into_iter().map(|action| {
+        CodeAction {
+            title: action.action_display_name.to_owned(),
+            data: Some(
+                serde_json::to_value(CodeActionResolveData {
+                    text_document: request.params.text_document.clone(),
+                    range: request.params.range,
+                })
+                .unwrap(),
+            ),
+            ..Default::default()
+        }
+    }));
 
     Ok(Response {
         id: request.id.clone(),
@@ -840,6 +1003,7 @@ mod tests {
         let prompt = Prompt::ContextAndCode(ContextAndCodePrompt {
             context: "".to_string(),
             code: "tt ".to_string(),
+            selected_text: None,
         });
         let response = "tt abc".to_string();
         let new_response = post_process_response(response.clone(), &prompt, &config);
@@ -848,6 +1012,7 @@ mod tests {
         let prompt = Prompt::ContextAndCode(ContextAndCodePrompt {
             context: "".to_string(),
             code: "ff".to_string(),
+            selected_text: None,
         });
         let response = "zz".to_string();
         let new_response = post_process_response(response.clone(), &prompt, &config);
@@ -856,6 +1021,7 @@ mod tests {
         let prompt = Prompt::ContextAndCode(ContextAndCodePrompt {
             context: "".to_string(),
             code: "tt <CURSOR> tt".to_string(),
+            selected_text: None,
         });
         let response = "tt abc tt".to_string();
         let new_response = post_process_response(response.clone(), &prompt, &config);
@@ -864,6 +1030,7 @@ mod tests {
         let prompt = Prompt::ContextAndCode(ContextAndCodePrompt {
             context: "".to_string(),
             code: "d<CURSOR>d".to_string(),
+            selected_text: None,
         });
         let response = "zz".to_string();
         let new_response = post_process_response(response.clone(), &prompt, &config);

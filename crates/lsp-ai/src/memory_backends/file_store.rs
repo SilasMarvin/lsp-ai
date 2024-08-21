@@ -240,20 +240,22 @@ impl FileStore {
                     let rope_slice = rope
                         .get_slice(start..end + "<CURSOR>".chars().count())
                         .context("Error getting rope slice")?;
-                    Prompt::ContextAndCode(ContextAndCodePrompt::new(
-                        "".to_string(),
-                        rope_slice.to_string(),
-                    ))
+                    Prompt::ContextAndCode(ContextAndCodePrompt {
+                        context: "".to_string(),
+                        code: rope_slice.to_string(),
+                        selected_text: None,
+                    })
                 } else {
                     let start = cursor_index
                         .saturating_sub(tokens_to_estimated_characters(params.max_context));
                     let rope_slice = rope
                         .get_slice(start..cursor_index)
                         .context("Error getting rope slice")?;
-                    Prompt::ContextAndCode(ContextAndCodePrompt::new(
-                        "".to_string(),
-                        rope_slice.to_string(),
-                    ))
+                    Prompt::ContextAndCode(ContextAndCodePrompt {
+                        context: "".to_string(),
+                        code: rope_slice.to_string(),
+                        selected_text: None,
+                    })
                 }
             }
             PromptType::FIM => {
@@ -268,7 +270,10 @@ impl FileStore {
                 let suffix = rope
                     .get_slice(cursor_index..end)
                     .context("Error getting rope slice")?;
-                Prompt::FIM(FIMPrompt::new(prefix.to_string(), suffix.to_string()))
+                Prompt::FIM(FIMPrompt {
+                    prompt: prefix.to_string(),
+                    suffix: suffix.to_string(),
+                })
             }
         })
     }
@@ -837,8 +842,6 @@ mod tests {
 
     #[test]
     fn test_file_store_tree_sitter() -> anyhow::Result<()> {
-        crate::init_logger();
-
         let config = Config::default_with_file_store_without_models();
         let file_store_config = if let config::ValidMemoryBackend::FileStore(file_store_config) =
             config.config.memory.clone()

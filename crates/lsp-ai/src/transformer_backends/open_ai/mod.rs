@@ -11,7 +11,7 @@ use crate::{
     transformer_worker::{
         DoGenerationResponse, DoGenerationStreamResponse, GenerationStreamRequest,
     },
-    utils::{format_chat_messages, format_context_code},
+    utils::{format_chat_messages, format_prompt},
 };
 
 use super::TransformerBackend;
@@ -57,18 +57,27 @@ pub(crate) struct OpenAI {
     configuration: config::OpenAI,
 }
 
-#[derive(Deserialize)]
-struct OpenAICompletionsChoice {
+#[derive(Deserialize, Serialize)]
+pub(crate) struct OpenAICompletionsChoice {
     text: String,
 }
 
-#[derive(Deserialize)]
-struct OpenAICompletionsResponse {
-    choices: Option<Vec<OpenAICompletionsChoice>>,
-    error: Option<Value>,
-    #[serde(default)]
-    #[serde(flatten)]
-    pub(crate) other: HashMap<String, Value>,
+#[derive(Deserialize, Serialize)]
+pub(crate) struct OpenAIError {
+    pub(crate) error: Value,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct OpenAIValidCompletionsResponse {
+    pub(crate) choices: Vec<OpenAICompletionsChoice>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+pub(crate) enum OpenAICompletionsResponse {
+    Success(OpenAIValidCompletionsResponse),
+    Error(OpenAIError),
+    Other(HashMap<String, Value>),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -77,18 +86,22 @@ pub(crate) struct OpenAIChatMessage {
     pub(crate) content: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub(crate) struct OpenAIChatChoices {
     pub(crate) message: OpenAIChatMessage,
 }
 
-#[derive(Deserialize)]
-pub(crate) struct OpenAIChatResponse {
-    pub(crate) choices: Option<Vec<OpenAIChatChoices>>,
-    pub(crate) error: Option<Value>,
-    #[serde(default)]
-    #[serde(flatten)]
-    pub(crate) other: HashMap<String, Value>,
+#[derive(Deserialize, Serialize)]
+pub(crate) struct OpenAIValidChatResponse {
+    pub(crate) choices: Vec<OpenAIChatChoices>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+pub(crate) enum OpenAIChatResponse {
+    Success(OpenAIValidChatResponse),
+    Error(OpenAIError),
+    Other(HashMap<String, Value>),
 }
 
 impl OpenAI {
@@ -144,15 +157,26 @@ impl OpenAI {
             .json(&params)
             .send().await?
             .json().await?;
-        if let Some(error) = res.error {
-            anyhow::bail!("{:?}", error.to_string())
-        } else if let Some(mut choices) = res.choices {
-            Ok(std::mem::take(&mut choices[0].text))
-        } else {
-            anyhow::bail!(
-                "Uknown error while making request to OpenAI: {:?}",
-                res.other
-            )
+        info!(
+            "Response from OpenAI compatible completions API:\n{}",
+            serde_json::to_string_pretty(&res).unwrap()
+        );
+        match res {
+            OpenAICompletionsResponse::Success(mut resp) => {
+                Ok(std::mem::take(&mut resp.choices[0].text))
+            }
+            OpenAICompletionsResponse::Error(error) => {
+                anyhow::bail!(
+                    "making OpenAI completions request: {:?}",
+                    error.error.to_string()
+                )
+            }
+            OpenAICompletionsResponse::Other(other) => {
+                anyhow::bail!(
+                    "unknown error while making OpenAI completions request: {:?}",
+                    other
+                )
+            }
         }
     }
 
@@ -192,15 +216,23 @@ impl OpenAI {
             .await?
             .json()
             .await?;
-        if let Some(error) = res.error {
-            anyhow::bail!("{:?}", error.to_string())
-        } else if let Some(choices) = res.choices {
-            Ok(choices[0].message.content.clone())
-        } else {
-            anyhow::bail!(
-                "Unknown error while making request to OpenAI: {:?}",
-                res.other
-            )
+        info!(
+            "Response from OpenAI compatible chat API:\n{}",
+            serde_json::to_string_pretty(&res).unwrap()
+        );
+        match res {
+            OpenAIChatResponse::Success(mut resp) => {
+                Ok(std::mem::take(&mut resp.choices[0].message.content))
+            }
+            OpenAIChatResponse::Error(error) => {
+                anyhow::bail!("making OpenAI chat request: {:?}", error.error.to_string())
+            }
+            OpenAIChatResponse::Other(other) => {
+                anyhow::bail!(
+                    "unknown error while making OpenAI chat request: {:?}",
+                    other
+                )
+            }
         }
     }
 
@@ -216,11 +248,8 @@ impl OpenAI {
                     self.get_chat(messages, params).await
                 }
                 None => {
-                    self.get_completion(
-                        &format_context_code(&code_and_context.context, &code_and_context.code),
-                        params,
-                    )
-                    .await
+                    self.get_completion(&format_prompt(&code_and_context), params)
+                        .await
                 }
             },
             Prompt::FIM(fim) => match &params.fim {

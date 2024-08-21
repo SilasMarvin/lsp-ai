@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{info, instrument};
 
@@ -32,6 +32,7 @@ const fn temperature_default() -> f32 {
 #[derive(Debug, Deserialize)]
 pub(crate) struct AnthropicRunParams {
     system: String,
+    #[serde(default)]
     messages: Vec<ChatMessage>,
     #[serde(default = "max_tokens_default")]
     pub(crate) max_tokens: usize,
@@ -45,18 +46,27 @@ pub(crate) struct Anthropic {
     config: config::Anthropic,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
+struct AnthropicResponse {
+    content: Vec<AnthropicChatMessage>,
+}
+
+#[derive(Deserialize, Serialize)]
 struct AnthropicChatMessage {
     text: String,
 }
 
-#[derive(Deserialize)]
-struct AnthropicChatResponse {
-    content: Option<Vec<AnthropicChatMessage>>,
-    error: Option<Value>,
-    #[serde(default)]
-    #[serde(flatten)]
-    pub(crate) other: HashMap<String, Value>,
+#[derive(Deserialize, Serialize)]
+pub struct ChatError {
+    error: Value,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum ChatResponse {
+    Success(AnthropicResponse),
+    Error(ChatError),
+    Other(HashMap<String, Value>),
 }
 
 impl Anthropic {
@@ -92,7 +102,7 @@ impl Anthropic {
             "Calling Anthropic compatible API with parameters:\n{}",
             serde_json::to_string_pretty(&params).unwrap()
         );
-        let res: AnthropicChatResponse = client
+        let res: ChatResponse = client
             .post(
                 self.config
                     .chat_endpoint
@@ -108,15 +118,18 @@ impl Anthropic {
             .await?
             .json()
             .await?;
-        if let Some(error) = res.error {
-            anyhow::bail!("{:?}", error.to_string())
-        } else if let Some(mut content) = res.content {
-            Ok(std::mem::take(&mut content[0].text))
-        } else {
-            anyhow::bail!(
-                "Uknown error while making request to Anthropic: {:?}",
-                res.other
-            )
+        info!(
+            "Response from Anthropic compatible API:\n{}",
+            serde_json::to_string_pretty(&res).unwrap()
+        );
+        match res {
+            ChatResponse::Success(mut resp) => Ok(std::mem::take(&mut resp.content[0].text)),
+            ChatResponse::Error(error) => {
+                anyhow::bail!("making Anthropic request: {:?}", error.error.to_string())
+            }
+            ChatResponse::Other(other) => {
+                anyhow::bail!("unknown error while making Anthropic request: {:?}", other)
+            }
         }
     }
 

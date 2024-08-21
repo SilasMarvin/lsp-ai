@@ -38,21 +38,25 @@ pub(crate) fn format_chat_messages(
 ) -> Vec<ChatMessage> {
     messages
         .iter()
-        .map(|m| {
-            ChatMessage::new(
-                m.role.to_owned(),
-                format_context_code_in_str(&m.content, &prompt.context, &prompt.code),
-            )
-        })
+        .map(|m| ChatMessage::new(m.role.to_owned(), format_prompt_in_str(&m.content, &prompt)))
         .collect()
 }
 
-pub(crate) fn format_context_code_in_str(s: &str, context: &str, code: &str) -> String {
-    s.replace("{CONTEXT}", context).replace("{CODE}", code)
+pub(crate) fn format_prompt_in_str(s: &str, prompt: &ContextAndCodePrompt) -> String {
+    s.replace("{CONTEXT}", &prompt.context)
+        .replace("{CODE}", &prompt.code)
+        .replace(
+            "{SELECTED_TEXT}",
+            prompt
+                .selected_text
+                .as_ref()
+                .map(|x| x.as_str())
+                .unwrap_or_default(),
+        )
 }
 
-pub(crate) fn format_context_code(context: &str, code: &str) -> String {
-    format!("{context}\n\n{code}")
+pub(crate) fn format_prompt(prompt: &ContextAndCodePrompt) -> String {
+    format!("{}\n\n{}", &prompt.context, &prompt.code)
 }
 
 pub(crate) fn chunk_to_id(uri: &str, chunk: &Chunk) -> String {

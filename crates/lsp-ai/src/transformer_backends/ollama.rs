@@ -9,7 +9,7 @@ use crate::{
     transformer_worker::{
         DoGenerationResponse, DoGenerationStreamResponse, GenerationStreamRequest,
     },
-    utils::{format_chat_messages, format_context_code},
+    utils::{format_chat_messages, format_prompt},
 };
 
 use super::TransformerBackend;
@@ -30,13 +30,17 @@ pub(crate) struct Ollama {
     configuration: config::Ollama,
 }
 
-#[derive(Deserialize)]
-struct OllamaCompletionsResponse {
-    response: Option<String>,
-    error: Option<Value>,
-    #[serde(default)]
-    #[serde(flatten)]
-    other: HashMap<String, Value>,
+#[derive(Deserialize, Serialize)]
+struct OllamaValidCompletionsResponse {
+    response: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum OllamaCompletionsResponse {
+    Success(OllamaValidCompletionsResponse),
+    Error(OllamaError),
+    Other(HashMap<String, Value>),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -45,13 +49,22 @@ struct OllamaChatMessage {
     content: String,
 }
 
-#[derive(Deserialize)]
-struct OllamaChatResponse {
-    message: Option<OllamaChatMessage>,
-    error: Option<Value>,
-    #[serde(default)]
-    #[serde(flatten)]
-    other: HashMap<String, Value>,
+#[derive(Deserialize, Serialize)]
+struct OllamaError {
+    error: Value,
+}
+
+#[derive(Deserialize, Serialize)]
+struct OllamaValidChatResponse {
+    message: OllamaChatMessage,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum OllamaChatResponse {
+    Success(OllamaValidChatResponse),
+    Error(OllamaError),
+    Other(HashMap<String, Value>),
 }
 
 impl Ollama {
@@ -75,7 +88,7 @@ impl Ollama {
             "stream": false
         });
         info!(
-            "Calling Ollama compatible completion API with parameters:\n{}",
+            "Calling Ollama compatible completions API with parameters:\n{}",
             serde_json::to_string_pretty(&params).unwrap()
         );
         let res: OllamaCompletionsResponse = client
@@ -92,15 +105,24 @@ impl Ollama {
             .await?
             .json()
             .await?;
-        if let Some(error) = res.error {
-            anyhow::bail!("{:?}", error.to_string())
-        } else if let Some(response) = res.response {
-            Ok(response)
-        } else {
-            anyhow::bail!(
-                "Uknown error while making request to Ollama: {:?}",
-                res.other
-            )
+        info!(
+            "Response from Ollama compatible completions API:\n{}",
+            serde_json::to_string_pretty(&res).unwrap()
+        );
+        match res {
+            OllamaCompletionsResponse::Success(mut resp) => Ok(std::mem::take(&mut resp.response)),
+            OllamaCompletionsResponse::Error(error) => {
+                anyhow::bail!(
+                    "making Ollama completions request: {:?}",
+                    error.error.to_string()
+                )
+            }
+            OllamaCompletionsResponse::Other(other) => {
+                anyhow::bail!(
+                    "unknown error while making Ollama completions request: {:?}",
+                    other
+                )
+            }
         }
     }
 
@@ -137,15 +159,21 @@ impl Ollama {
             .await?
             .json()
             .await?;
-        if let Some(error) = res.error {
-            anyhow::bail!("{:?}", error.to_string())
-        } else if let Some(message) = res.message {
-            Ok(message.content)
-        } else {
-            anyhow::bail!(
-                "Unknown error while making request to Ollama: {:?}",
-                res.other
-            )
+        info!(
+            "Response from Ollama compatible chat API:\n{}",
+            serde_json::to_string_pretty(&res).unwrap()
+        );
+        match res {
+            OllamaChatResponse::Success(mut resp) => Ok(std::mem::take(&mut resp.message.content)),
+            OllamaChatResponse::Error(error) => {
+                anyhow::bail!("making Ollama chat request: {:?}", error.error.to_string())
+            }
+            OllamaChatResponse::Other(other) => {
+                anyhow::bail!(
+                    "unknown error while making Ollama chat request: {:?}",
+                    other
+                )
+            }
         }
     }
 
@@ -161,11 +189,8 @@ impl Ollama {
                     self.get_chat(messages, params).await
                 }
                 None => {
-                    self.get_completion(
-                        &format_context_code(&code_and_context.context, &code_and_context.code),
-                        params,
-                    )
-                    .await
+                    self.get_completion(&format_prompt(&code_and_context), params)
+                        .await
                 }
             },
             Prompt::FIM(fim) => match &params.fim {
