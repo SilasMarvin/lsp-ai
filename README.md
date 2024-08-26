@@ -39,6 +39,14 @@ Chat directly in your codebase with your favorite local or hosted models.
 
 *Chatting with Claude Sonnet in Helix*
 
+## Custom Actions
+
+Create custom actions to do code refactoring, code completions and more!
+
+![custom-actions](https://github.com/user-attachments/assets/6522dced-d5ee-43bc-8b64-f4313bcc82f2)
+
+*Using Claude Sonnet to perform refactoring with chain of thought prompting in Helix*
+
 ## Code Completions
 
 LSP-AI can work as an alternative to Github Copilot.
