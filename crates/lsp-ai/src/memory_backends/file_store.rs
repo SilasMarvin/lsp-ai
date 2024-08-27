@@ -28,7 +28,7 @@ impl AdditionalFileStoreParams {
 }
 
 #[derive(Clone)]
-pub struct File {
+pub(crate) struct File {
     rope: Rope,
     tree: Option<Tree>,
 }
@@ -38,11 +38,11 @@ impl File {
         Self { rope, tree }
     }
 
-    pub fn rope(&self) -> &Rope {
+    pub(crate) fn rope(&self) -> &Rope {
         &self.rope
     }
 
-    pub fn tree(&self) -> Option<&Tree> {
+    pub(crate) fn tree(&self) -> Option<&Tree> {
         self.tree.as_ref()
     }
 }
@@ -278,15 +278,15 @@ impl FileStore {
         })
     }
 
-    pub fn file_map(&self) -> &RwLock<HashMap<String, File>> {
+    pub(crate) fn file_map(&self) -> &RwLock<HashMap<String, File>> {
         &self.file_map
     }
 
-    pub fn contains_file(&self, uri: &str) -> bool {
+    pub(crate) fn contains_file(&self, uri: &str) -> bool {
         self.file_map.read().contains_key(uri)
     }
 
-    pub fn position_to_byte(&self, position: &TextDocumentPositionParams) -> anyhow::Result<usize> {
+    pub(crate) fn position_to_byte(&self, position: &TextDocumentPositionParams) -> anyhow::Result<usize> {
         let file_map = self.file_map.read();
         let uri = position.text_document.uri.to_string();
         let file = file_map
@@ -494,7 +494,7 @@ impl MemoryBackend for FileStore {
 // For testing use only
 #[cfg(test)]
 impl FileStore {
-    pub fn default_with_filler_file() -> anyhow::Result<Self> {
+    pub(crate) fn default_with_filler_file() -> anyhow::Result<Self> {
         let config = Config::default_with_file_store_without_models();
         let file_store_config = if let config::ValidMemoryBackend::FileStore(file_store_config) =
             config.config.memory.clone()

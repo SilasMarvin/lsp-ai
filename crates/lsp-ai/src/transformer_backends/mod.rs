@@ -19,7 +19,7 @@ mod ollama;
 mod open_ai;
 
 #[async_trait::async_trait]
-pub trait TransformerBackend {
+pub(crate) trait TransformerBackend {
     async fn do_completion(
         &self,
         prompt: &Prompt,
@@ -38,6 +38,7 @@ pub trait TransformerBackend {
         params: Value,
     ) -> anyhow::Result<DoGenerationResponse>;
 
+    #[allow(dead_code)]
     async fn do_generate_stream(
         &self,
         request: &GenerationStreamRequest,

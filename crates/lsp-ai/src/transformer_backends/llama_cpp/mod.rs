@@ -23,23 +23,23 @@ const fn max_new_tokens_default() -> usize {
 
 // NOTE: We cannot deny unknown fields as the provided parameters may contain other fields relevant to other processes
 #[derive(Debug, Deserialize)]
-pub struct LLaMACPPRunParams {
-    pub fim: Option<FIM>,
+pub(crate) struct LLaMACPPRunParams {
+    pub(crate) fim: Option<FIM>,
     messages: Option<Vec<ChatMessage>>,
     chat_template: Option<String>, // A Jinja template
     chat_format: Option<String>,   // The name of a template in llamacpp
     #[serde(default = "max_new_tokens_default")]
-    pub max_tokens: usize,
+    pub(crate) max_tokens: usize,
     // TODO: Explore other arguments
 }
 
-pub struct LLaMACPP {
+pub(crate) struct LLaMACPP {
     model: Model,
 }
 
 impl LLaMACPP {
     #[instrument]
-    pub fn new(configuration: config::LLaMACPP) -> anyhow::Result<Self> {
+    pub(crate) fn new(configuration: config::LLaMACPP) -> anyhow::Result<Self> {
         let model_path = match (
             &configuration.file_path,
             &configuration.repository,

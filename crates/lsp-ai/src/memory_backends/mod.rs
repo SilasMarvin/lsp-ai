@@ -11,7 +11,7 @@ mod postgresml;
 mod vector_store;
 
 #[derive(Clone, Debug)]
-pub enum PromptType {
+pub(crate) enum PromptType {
     ContextAndCode,
     FIM,
 }
@@ -33,20 +33,20 @@ impl From<&Value> for MemoryRunParams {
 }
 
 #[derive(Debug)]
-pub struct ContextAndCodePrompt {
-    pub context: String,
-    pub code: String,
-    pub selected_text: Option<String>,
+pub(crate) struct ContextAndCodePrompt {
+    pub(crate) context: String,
+    pub(crate) code: String,
+    pub(crate) selected_text: Option<String>,
 }
 
 #[derive(Debug)]
-pub struct FIMPrompt {
-    pub prompt: String,
-    pub suffix: String,
+pub(crate) struct FIMPrompt {
+    pub(crate) prompt: String,
+    pub(crate) suffix: String,
 }
 
 #[derive(Debug)]
-pub enum Prompt {
+pub(crate) enum Prompt {
     FIM(FIMPrompt),
     ContextAndCode(ContextAndCodePrompt),
 }
@@ -96,10 +96,7 @@ impl<'a> TryFrom<&'a Prompt> for &'a FIMPrompt {
 }
 
 #[async_trait::async_trait]
-pub trait MemoryBackend {
-    async fn init(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
+pub(crate) trait MemoryBackend {
     fn opened_text_document(&self, params: DidOpenTextDocumentParams) -> anyhow::Result<()>;
     fn code_action_request(
         &self,
@@ -144,7 +141,7 @@ impl TryFrom<Config> for Box<dyn MemoryBackend + Send + Sync> {
 // easier to just pass in a default prompt.
 #[cfg(test)]
 impl Prompt {
-    pub fn default_with_cursor() -> Self {
+    pub(crate) fn default_with_cursor() -> Self {
         Self::ContextAndCode(ContextAndCodePrompt {
             context: r#"def test_context():\n    pass"#.to_string(),
             code: r#"def test_code():\n    <CURSOR>"#.to_string(),
@@ -152,14 +149,14 @@ impl Prompt {
         })
     }
 
-    pub fn default_fim() -> Self {
+    pub(crate) fn default_fim() -> Self {
         Self::FIM(FIMPrompt {
             prompt: r#"def test_context():\n    pass"#.to_string(),
             suffix: r#"def test_code():\n    "#.to_string(),
         })
     }
 
-    pub fn default_without_cursor() -> Self {
+    pub(crate) fn default_without_cursor() -> Self {
         Self::ContextAndCode(ContextAndCodePrompt {
             context: r#"def test_context():\n    pass"#.to_string(),
             code: r#"def test_code():\n    "#.to_string(),

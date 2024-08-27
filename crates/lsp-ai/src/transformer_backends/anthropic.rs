@@ -57,7 +57,7 @@ struct AnthropicChatMessage {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct ChatError {
+pub(crate) struct ChatError {
     error: Value,
 }
 

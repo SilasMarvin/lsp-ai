@@ -79,7 +79,7 @@ pub(crate) struct PostgresML {
 
 impl PostgresML {
     #[instrument]
-    pub fn new(
+    pub(crate) fn new(
         mut postgresml_config: config::PostgresML,
         configuration: Config,
     ) -> anyhow::Result<Self> {

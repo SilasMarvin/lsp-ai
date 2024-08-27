@@ -17,14 +17,14 @@ use super::LLaMACPPRunParams;
 
 static BACKEND: Lazy<LlamaBackend> = Lazy::new(|| LlamaBackend::init().unwrap());
 
-pub struct Model {
+pub(crate) struct Model {
     model: LlamaModel,
     n_ctx: NonZeroU32,
 }
 
 impl Model {
     #[instrument]
-    pub fn new(model_path: PathBuf, config: &config::LLaMACPP) -> anyhow::Result<Self> {
+    pub(crate) fn new(model_path: PathBuf, config: &config::LLaMACPP) -> anyhow::Result<Self> {
         // Initialize the model_params
         let model_params = LlamaModelParams::default().with_n_gpu_layers(config.n_gpu_layers);
 
@@ -42,7 +42,7 @@ impl Model {
     }
 
     #[instrument(skip(self))]
-    pub fn complete(&self, prompt: &str, params: LLaMACPPRunParams) -> anyhow::Result<String> {
+    pub(crate) fn complete(&self, prompt: &str, params: LLaMACPPRunParams) -> anyhow::Result<String> {
         info!("Completing with llama.cpp with prompt:\n{prompt}");
 
         // initialize the context
@@ -129,7 +129,7 @@ impl Model {
     }
 
     #[instrument(skip(self))]
-    pub fn apply_chat_template(
+    pub(crate) fn apply_chat_template(
         &self,
         messages: Vec<ChatMessage>,
         template: Option<String>,
@@ -144,13 +144,13 @@ impl Model {
     }
 
     #[instrument(skip(self))]
-    pub fn get_eos_token(&self) -> anyhow::Result<String> {
+    pub(crate) fn get_eos_token(&self) -> anyhow::Result<String> {
         let token = self.model.token_eos();
         Ok(self.model.token_to_str(token, Special::Tokenize)?)
     }
 
     #[instrument(skip(self))]
-    pub fn get_bos_token(&self) -> anyhow::Result<String> {
+    pub(crate) fn get_bos_token(&self) -> anyhow::Result<String> {
         let token = self.model.token_bos();
         Ok(self.model.token_to_str(token, Special::Tokenize)?)
     }

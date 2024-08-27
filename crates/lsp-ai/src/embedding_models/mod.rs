@@ -2,7 +2,7 @@ use crate::config::ValidEmbeddingModel;
 
 mod ollama;
 
-pub fn normalize(mut vector: Vec<f32>) -> Vec<f32> {
+fn normalize(mut vector: Vec<f32>) -> Vec<f32> {
     let magnitude = (vector.iter().map(|&x| x * x).sum::<f32>()).sqrt();
 
     if magnitude != 0.0 {
@@ -15,13 +15,13 @@ pub fn normalize(mut vector: Vec<f32>) -> Vec<f32> {
 }
 
 #[derive(Clone, Copy)]
-pub enum EmbeddingPurpose {
+pub(crate) enum EmbeddingPurpose {
     Storage,
     Retrieval,
 }
 
 #[async_trait::async_trait]
-pub trait EmbeddingModel {
+pub(crate) trait EmbeddingModel {
     async fn embed(
         &self,
         batch: Vec<&str>,

@@ -54,37 +54,37 @@ impl GenerationRequest {
 // The generate stream is not yet ready but we don't want to remove it
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
-pub struct GenerationStreamRequest {
+pub(crate) struct GenerationStreamRequest {
     id: RequestId,
     params: GenerationStreamParams,
 }
 
 impl GenerationStreamRequest {
-    pub fn new(id: RequestId, params: GenerationStreamParams) -> Self {
+    pub(crate) fn new(id: RequestId, params: GenerationStreamParams) -> Self {
         Self { id, params }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct CodeActionRequest {
+pub(crate) struct CodeActionRequest {
     id: RequestId,
     params: CodeActionParams,
 }
 
 impl CodeActionRequest {
-    pub fn new(id: RequestId, params: CodeActionParams) -> Self {
+    pub(crate) fn new(id: RequestId, params: CodeActionParams) -> Self {
         Self { id, params }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct CodeActionResolveRequest {
+pub(crate) struct CodeActionResolveRequest {
     id: RequestId,
     params: CodeAction,
 }
 
 impl CodeActionResolveRequest {
-    pub fn new(id: RequestId, params: CodeAction) -> Self {
+    pub(crate) fn new(id: RequestId, params: CodeAction) -> Self {
         Self { id, params }
     }
 }
@@ -112,16 +112,17 @@ impl WorkerRequest {
     }
 }
 
-pub struct DoCompletionResponse {
-    pub insert_text: String,
+pub(crate) struct DoCompletionResponse {
+    pub(crate) insert_text: String,
 }
 
-pub struct DoGenerationResponse {
-    pub generated_text: String,
+pub(crate) struct DoGenerationResponse {
+    pub(crate) generated_text: String,
 }
 
-pub struct DoGenerationStreamResponse {
-    pub generated_text: String,
+#[allow(dead_code)]
+pub(crate) struct DoGenerationStreamResponse {
+    pub(crate) generated_text: String,
 }
 
 fn post_process_start(response: String, front: &str) -> String {

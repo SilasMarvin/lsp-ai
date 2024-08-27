@@ -329,7 +329,7 @@ impl VectorStoreInner {
     }
 }
 
-pub struct VectorStore {
+pub(crate) struct VectorStore {
     file_store: Arc<FileStore>,
     crawl: Option<Arc<Mutex<Crawl>>>,
     splitter: Arc<Box<dyn Splitter + Send + Sync>>,
@@ -340,7 +340,7 @@ pub struct VectorStore {
 }
 
 impl VectorStore {
-    pub fn new(
+    pub(crate) fn new(
         mut vector_store_config: config::VectorStore,
         config: Config,
     ) -> anyhow::Result<Self> {
@@ -703,7 +703,7 @@ impl MemoryBackend for VectorStore {
         // Get the embedding
         let embedding = self
             .embedding_model
-            .embed(vec![&query], EmbeddingPurpose::Storage)
+            .embed(vec![&query], EmbeddingPurpose::Retrieval)
             .await?
             .into_iter()
             .nth(0)
