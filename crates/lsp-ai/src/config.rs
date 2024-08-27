@@ -14,12 +14,12 @@ const fn true_default() -> bool {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PostProcess {
-    pub extractor: Option<String>,
+pub(crate) struct PostProcess {
+    pub(crate) extractor: Option<String>,
     #[serde(default = "true_default")]
-    pub remove_duplicate_start: bool,
+    pub(crate) remove_duplicate_start: bool,
     #[serde(default = "true_default")]
-    pub remove_duplicate_end: bool,
+    pub(crate) remove_duplicate_end: bool,
 }
 
 impl Default for PostProcess {
@@ -34,7 +34,7 @@ impl Default for PostProcess {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
-pub enum ValidSplitter {
+pub(crate) enum ValidSplitter {
     #[serde(rename = "tree_sitter")]
     TreeSitter(TreeSitter),
     #[serde(rename = "text_splitter")]
@@ -56,11 +56,11 @@ const fn chunk_overlap_default() -> usize {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct TreeSitter {
+pub(crate) struct TreeSitter {
     #[serde(default = "chunk_size_default")]
-    pub chunk_size: usize,
+    pub(crate) chunk_size: usize,
     #[serde(default = "chunk_overlap_default")]
-    pub chunk_overlap: usize,
+    pub(crate) chunk_overlap: usize,
 }
 
 impl Default for TreeSitter {
@@ -73,39 +73,39 @@ impl Default for TreeSitter {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct TextSplitter {
+pub(crate) struct TextSplitter {
     #[serde(default = "chunk_size_default")]
-    pub chunk_size: usize,
+    pub(crate) chunk_size: usize,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-pub struct EmbeddingPrefix {
+pub(crate) struct EmbeddingPrefix {
     #[serde(default)]
-    pub storage: String,
+    pub(crate) storage: String,
     #[serde(default)]
-    pub retrieval: String,
+    pub(crate) retrieval: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct OllamaEmbeddingModel {
+pub(crate) struct OllamaEmbeddingModel {
     // The generate endpoint, default: 'http://localhost:11434/api/embeddings'
-    pub endpoint: Option<String>,
+    pub(crate) endpoint: Option<String>,
     // The model name
-    pub model: String,
+    pub(crate) model: String,
     // The prefix to apply to the embeddings
     #[serde(default)]
-    pub prefix: EmbeddingPrefix,
+    pub(crate) prefix: EmbeddingPrefix,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
-pub enum ValidEmbeddingModel {
+pub(crate) enum ValidEmbeddingModel {
     #[serde(rename = "ollama")]
     Ollama(OllamaEmbeddingModel),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
-pub enum VectorDataType {
+pub(crate) enum VectorDataType {
     #[serde(rename = "f32")]
     F32,
     #[serde(rename = "binary")]
@@ -114,11 +114,11 @@ pub enum VectorDataType {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct VectorStore {
-    pub crawl: Option<Crawl>,
+    pub(crate) crawl: Option<Crawl>,
     #[serde(default)]
-    pub splitter: ValidSplitter,
-    pub embedding_model: ValidEmbeddingModel,
-    pub data_type: VectorDataType,
+    pub(crate) splitter: ValidSplitter,
+    pub(crate) embedding_model: ValidEmbeddingModel,
+    pub(crate) data_type: VectorDataType,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -265,20 +265,20 @@ const fn n_ctx_default() -> u32 {
 #[cfg(feature = "llama_cpp")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LLaMACPP {
+pub(crate) struct LLaMACPP {
     // Which model to use
-    pub repository: Option<String>,
-    pub name: Option<String>,
-    pub file_path: Option<String>,
+    pub(crate) repository: Option<String>,
+    pub(crate) name: Option<String>,
+    pub(crate) file_path: Option<String>,
     // The layers to put on the GPU
     #[serde(default = "n_gpu_layers_default")]
-    pub n_gpu_layers: u32,
+    pub(crate) n_gpu_layers: u32,
     // The context size
     #[serde(default = "n_ctx_default")]
-    pub n_ctx: u32,
+    pub(crate) n_ctx: u32,
     // The maximum requests per second
     #[serde(default = "max_requests_per_second_default")]
-    pub max_requests_per_second: f32,
+    pub(crate) max_requests_per_second: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -349,7 +349,7 @@ pub(crate) struct Completion {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Chat {
+pub(crate) struct Chat {
     // The trigger text
     pub(crate) trigger: String,
     // The name to display in the editor
@@ -362,7 +362,7 @@ pub struct Chat {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Action {
+pub(crate) struct Action {
     // The name to display in the editor
     pub(crate) action_display_name: String,
     // The model key to use
@@ -395,13 +395,13 @@ pub(crate) struct ValidClientParams {
 }
 
 #[derive(Clone, Debug)]
-pub struct Config {
+pub(crate) struct Config {
     pub(crate) config: ValidConfig,
     pub(crate) client_params: ValidClientParams,
 }
 
 impl Config {
-    pub fn new(mut args: Value) -> Result<Self> {
+    pub(crate) fn new(mut args: Value) -> Result<Self> {
         // Validate that the models specified are there so we can unwrap
         let configuration_args = args
             .as_object_mut()
@@ -422,23 +422,19 @@ impl Config {
     // Helpers for the backends ///////////
     ///////////////////////////////////////
 
-    pub fn get_chats(&self) -> &Vec<Chat> {
+    pub(crate) fn get_chats(&self) -> &Vec<Chat> {
         &self.config.chats
     }
 
-    pub fn get_actions(&self) -> &Vec<Action> {
+    pub(crate) fn get_actions(&self) -> &Vec<Action> {
         &self.config.actions
     }
 
-    pub fn is_completions_enabled(&self) -> bool {
-        self.config.completion.is_some()
-    }
-
-    pub fn get_completions_post_process(&self) -> Option<&PostProcess> {
+    pub(crate) fn get_completions_post_process(&self) -> Option<&PostProcess> {
         self.config.completion.as_ref().map(|x| &x.post_process)
     }
 
-    pub fn get_completion_transformer_max_requests_per_second(&self) -> anyhow::Result<f32> {
+    pub(crate) fn get_completion_transformer_max_requests_per_second(&self) -> anyhow::Result<f32> {
         match &self
             .config
             .models
@@ -470,7 +466,7 @@ impl Config {
 // For teesting use only
 #[cfg(test)]
 impl Config {
-    pub fn default_with_file_store_without_models() -> Self {
+    pub(crate) fn default_with_file_store_without_models() -> Self {
         Self {
             config: ValidConfig {
                 memory: ValidMemoryBackend::FileStore(FileStore { crawl: None }),

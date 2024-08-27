@@ -22,7 +22,7 @@ impl Crawl {
     }
 
     #[instrument(skip(self, f))]
-    pub fn maybe_do_crawl(
+    pub(crate) fn maybe_do_crawl(
         &mut self,
         triggered_file: Option<String>,
         mut f: impl FnMut(&config::Crawl, &str) -> anyhow::Result<bool>,

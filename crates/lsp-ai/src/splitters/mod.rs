@@ -6,13 +6,13 @@ mod text_splitter;
 mod tree_sitter;
 
 #[derive(Debug, Serialize)]
-pub struct ByteRange {
-    pub start_byte: usize,
-    pub end_byte: usize,
+pub(crate) struct ByteRange {
+    pub(crate) start_byte: usize,
+    pub(crate) end_byte: usize,
 }
 
 impl ByteRange {
-    pub fn new(start_byte: usize, end_byte: usize) -> Self {
+    pub(crate) fn new(start_byte: usize, end_byte: usize) -> Self {
         Self {
             start_byte,
             end_byte,
@@ -21,9 +21,9 @@ impl ByteRange {
 }
 
 #[derive(Serialize)]
-pub struct Chunk {
-    pub text: String,
-    pub range: ByteRange,
+pub(crate) struct Chunk {
+    pub(crate) text: String,
+    pub(crate) range: ByteRange,
 }
 
 impl Chunk {
@@ -32,7 +32,7 @@ impl Chunk {
     }
 }
 
-pub trait Splitter {
+pub(crate) trait Splitter {
     fn split(&self, file: &File) -> Vec<Chunk>;
     fn split_file_contents(&self, uri: &str, contents: &str) -> Vec<Chunk>;
 

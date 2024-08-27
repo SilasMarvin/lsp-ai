@@ -5,12 +5,12 @@ pub(crate) enum GenerationStream {}
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GenerationStreamParams {
-    pub partial_result_token: ProgressToken,
+pub(crate) struct GenerationStreamParams {
+    pub(crate) partial_result_token: ProgressToken,
 
     // This field was "mixed-in" from TextDocumentPositionParams
     #[serde(flatten)]
-    pub text_document_position: TextDocumentPositionParams,
+    pub(crate) text_document_position: TextDocumentPositionParams,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]

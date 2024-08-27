@@ -11,7 +11,7 @@ fn template_name_from_template_string(template: &str) -> String {
     xxhash_rust::xxh3::xxh3_64(template.as_bytes()).to_string()
 }
 
-pub fn apply_chat_template(
+pub(crate) fn apply_chat_template(
     template: &str,
     chat_messages: Vec<ChatMessage>,
     bos_token: &str,

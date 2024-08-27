@@ -69,7 +69,7 @@ enum OllamaChatResponse {
 
 impl Ollama {
     #[instrument]
-    pub fn new(configuration: config::Ollama) -> Self {
+    pub(crate) fn new(configuration: config::Ollama) -> Self {
         Self { configuration }
     }
 

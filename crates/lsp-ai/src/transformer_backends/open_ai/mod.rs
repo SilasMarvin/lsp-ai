@@ -106,7 +106,7 @@ pub(crate) enum OpenAIChatResponse {
 
 impl OpenAI {
     #[instrument]
-    pub fn new(configuration: config::OpenAI) -> Self {
+    pub(crate) fn new(configuration: config::OpenAI) -> Self {
         Self { configuration }
     }
 

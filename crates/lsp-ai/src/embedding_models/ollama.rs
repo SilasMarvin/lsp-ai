@@ -8,29 +8,29 @@ use crate::config;
 use super::{normalize, EmbeddingModel, EmbeddingPurpose};
 
 #[derive(Deserialize)]
-pub struct Embed {
+pub(crate) struct Embed {
     embedding: Vec<f32>,
 }
 
 #[derive(Deserialize)]
-pub struct EmbedError {
+pub(crate) struct EmbedError {
     error: Value,
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-pub enum EmbedResponse {
+pub(crate) enum EmbedResponse {
     Success(Embed),
     Error(EmbedError),
     Other(HashMap<String, Value>),
 }
 
-pub struct Ollama {
+pub(crate) struct Ollama {
     config: config::OllamaEmbeddingModel,
 }
 
 impl Ollama {
-    pub fn new(config: config::OllamaEmbeddingModel) -> Self {
+    pub(crate) fn new(config: config::OllamaEmbeddingModel) -> Self {
         Self { config }
     }
 }
