@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::{
     collections::HashMap,
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{mpsc, Arc},
     thread,
 };
@@ -68,6 +68,9 @@ struct Args {
     // A dummy argument for now
     #[arg(long, default_value_t = true)]
     stdio: bool,
+    // JSON configuration file location
+    #[arg(long, value_parser = utils::validate_file_exists, required = false)]
+    config: Option<PathBuf>,
 }
 
 fn create_log_file(base_path: &Path) -> anyhow::Result<fs::File> {
@@ -109,6 +112,17 @@ fn init_logger(args: &Args) {
     }
 }
 
+fn load_config(args: &Args, init_args: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    if let Some(config_path) = &args.config {
+        let config_data = fs::read_to_string(config_path)?;
+        let mut config = serde_json::from_str(&config_data)?;
+        utils::merge_json(&mut config, &init_args);
+        Ok(config)
+    } else {
+        Ok(init_args)
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     init_logger(&args);
@@ -130,7 +144,7 @@ fn main() -> Result<()> {
     })?;
     let initialization_args = connection.initialize(server_capabilities)?;
 
-    if let Err(e) = main_loop(connection, initialization_args) {
+    if let Err(e) = main_loop(connection, load_config(&args, initialization_args)?) {
         error!("{e:?}");
     }
 

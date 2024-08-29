@@ -1,6 +1,9 @@
-use anyhow::Context;
+use std::path::PathBuf;
+
+use anyhow::{anyhow, Context};
 use lsp_server::ResponseError;
 use once_cell::sync::Lazy;
+use serde_json::Value;
 use tokio::runtime;
 use tree_sitter::Tree;
 
@@ -92,4 +95,29 @@ pub(crate) fn format_file_chunk(uri: &str, excerpt: &str, root_uri: Option<&str>
         r#"--{path}--
 {excerpt}"#,
     )
+}
+
+pub(crate) fn validate_file_exists(path: &str) -> anyhow::Result<PathBuf> {
+    let path = PathBuf::from(path);
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(anyhow!("File doesn't exist: {}", path.display()))
+    }
+}
+
+pub(crate) fn merge_json(a: &mut Value, b: &Value) {
+    match (a, b) {
+        (&mut Value::Object(ref mut a), &Value::Object(ref b)) => {
+            for (k, v) in b {
+                merge_json(a.entry(k.clone()).or_insert(Value::Null), v);
+            }
+        }
+        (&mut Value::Array(ref mut a), &Value::Array(ref b)) => {
+            a.extend(b.clone());
+        }
+        (a, b) => {
+            *a = b.clone();
+        }
+    }
 }
