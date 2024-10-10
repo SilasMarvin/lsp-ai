@@ -4,6 +4,7 @@ vim.g.maplocalleader = "\\"
 
 -- The init_options
 local lsp_ai_init_options = {
+  -- Optional when using nvim-lspconfig, defaults to a file_store.
   memory = {
     -- It is important to use this method as `{}` will be interpreted as an array when it should be an object
     file_store = vim.fn.empty_dict()
@@ -94,24 +95,24 @@ Response:
   }
 }
 
--- The easiest way to configure the language server is to use the nvim-lspconfig plugin: https://github.com/neovim/nvim-lspconfig
+-- The easiest way to get started with the language server is to use the nvim-lspconfig plugin: https://github.com/neovim/nvim-lspconfig
 -- Use the following snippet to configure it after installing it with the plugin manager of your choice.
+-- See the nvim-lspconfig docs for the supported parameters on top of the init_options at https://github.com/neovim/nvim-lspconfig/blob/master/doc/lspconfig.txt
 require('nvim-lspconfig').lsp_ai.setup {
-  -- See the nvim-lspconfig docs for the supported parameters on top of the init_options at https://github.com/neovim/nvim-lspconfig/blob/master/doc/lspconfig.txt
-  root_dir = vim.loop.cwd(),
+  root_dir = vim.fn.getcwd(),
   init_options = lsp_ai_init_options,
 }
 
 -- Start lsp-ai or attach the active instance when opening a buffer, handled automatically when using nvim-lspconfig
 local lsp_ai_config = {
   cmd = { 'lsp-ai' },
-  root_dir = vim.loop.cwd(),
+  root_dir = vim.fn.getcwd(),
   init_options = lsp_ai_init_options,
 }
 vim.api.nvim_create_autocmd("BufEnter", {
   callback = function(args)
     local bufnr = args.buf
-    local client = vim.lsp.get_active_clients({bufnr = bufnr, name = "lsp-ai"})
+    local client = vim.lsp.get_clients({bufnr = bufnr, name = "lsp-ai"})
     if #client == 0 then
       vim.lsp.start(lsp_ai_config, {bufnr = bufnr})
     end
