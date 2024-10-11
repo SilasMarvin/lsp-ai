@@ -101,9 +101,14 @@ Response:
 require('nvim-lspconfig').lsp_ai.setup {
   root_dir = vim.fn.getcwd(),
   init_options = lsp_ai_init_options,
+  -- By default, the nvim-lspconfig will attach lsp-ai to every filetype which can lead to surprising results when using
+  -- live completions especially when dealing with e.g. terminal windows or filetypes created by other plugins.
+  -- Use the following parameter to restrict which filetypes to register lsp-ai with.
+  -- filetypes = {}
 }
 
--- Start lsp-ai or attach the active instance when opening a buffer, handled automatically when using nvim-lspconfig
+-- Not needed it using nvim-lspconfig:
+-- Start lsp-ai or attach the active instance when opening a buffer
 local lsp_ai_config = {
   cmd = { 'lsp-ai' },
   root_dir = vim.fn.getcwd(),
