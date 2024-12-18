@@ -29,6 +29,8 @@ A short list of a few of the editors it works with:
 
 It works with many many many more editors.
 
+**NOTE: This project is currently used daily by many users and has reached a stage where it has all the features I want for it. Development is not necessarily done, but no new features are currently being developed for it.**
+
 # Features
 
 ## In-Editor Chatting
